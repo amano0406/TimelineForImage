@@ -1,0 +1,31 @@
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    environment:
+      HF_HOME: /models/huggingface
+      TIMELINE_FOR_IMAGE_LOCAL_MODEL: Salesforce/blip-image-captioning-base
+      TIMELINE_FOR_IMAGE_OCR_MODEL: tesseract:eng+jpn
+      TIMELINE_FOR_IMAGE_SETTINGS_PATH: /app-config/settings.json
+      TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH: /app-config/settings.example.json
+    command: ["watch"]
+    volumes:
+      - type: bind
+        source: .
+        target: /app-config
+      - type: bind
+        source: ${TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT:-/mnt/c}
+        target: /mnt/c
+        read_only: true
+      - type: bind
+        source: ${TIMELINE_FOR_IMAGE_OUTPUT_MOUNT:-/mnt/c/Users/amano/image}
+        target: /mnt/c/Users/amano/image
+      - type: volume
+        source: hf-model-cache
+        target: /models/huggingface
+    profiles:
+      - worker
+
+volumes:
+  hf-model-cache:

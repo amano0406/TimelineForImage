@@ -1,0 +1,11 @@
+{
+  "annotations": [
+    {
+      "relative_path": "sign.png",
+      "tags": ["sample", "ocr-check"],
+      "people": [],
+      "event": "local worker smoke test",
+      "note": "Generated test image for TimelineForImage validation."
+    }
+  ]
+}

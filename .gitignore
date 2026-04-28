@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+data/output/
+data/appdata/
+data/cache-smoke/
+data/final-config-smoke/
+data/final-config-smoke-2/
+data/settings-smoke/
+data/watch-smoke/
+outputs/
+settings.json
