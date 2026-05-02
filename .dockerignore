@@ -1,0 +1,8 @@
+.git
+.docker
+.playwright-cli
+output
+__pycache__
+.pytest_cache
+*.pyc
+*.zip

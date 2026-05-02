@@ -1,31 +1,25 @@
+name: timeline-for-image
+
 services:
   worker:
+    image: timeline-for-image-worker:latest
     build:
       context: .
       dockerfile: docker/worker.Dockerfile
     environment:
-      HF_HOME: /models/huggingface
-      TIMELINE_FOR_IMAGE_LOCAL_MODEL: Salesforce/blip-image-captioning-base
-      TIMELINE_FOR_IMAGE_OCR_MODEL: tesseract:eng+jpn
-      TIMELINE_FOR_IMAGE_SETTINGS_PATH: /app-config/settings.json
-      TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH: /app-config/settings.example.json
-    command: ["watch"]
+      TIMELINE_FOR_IMAGE_IN_DOCKER: "1"
+      TIMELINE_FOR_IMAGE_SETTINGS_PATH: /workspace/settings.json
+      TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH: /workspace/settings.example.json
+      PYTHONPATH: /workspace/worker/src
+      TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
     volumes:
-      - type: bind
-        source: .
-        target: /app-config
+      - ./:/workspace
       - type: bind
         source: ${TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT:-/mnt/c}
         target: /mnt/c
-        read_only: true
-      - type: bind
-        source: ${TIMELINE_FOR_IMAGE_OUTPUT_MOUNT:-/mnt/c/Users/amano/image}
-        target: /mnt/c/Users/amano/image
-      - type: volume
-        source: hf-model-cache
-        target: /models/huggingface
-    profiles:
-      - worker
+      - app-data:/shared/app-data
+      - cache-data:/shared/cache
 
 volumes:
-  hf-model-cache:
+  app-data:
+  cache-data:

@@ -1,23 +1,11 @@
 {
-  "sources": [
-    {
-      "path": "C:\\Users\\amano\\Pictures\\",
-      "recursive": true
-    }
+  "schemaVersion": 1,
+  "inputRoots": [
+    "C:\\TimelineData\\input-image\\"
   ],
-  "outputs_root": "C:\\Users\\amano\\image\\",
-  "appdata_root": "C:\\Users\\amano\\image\\.timeline-for-image-state",
-  "caption": {
-    "mode": "local",
-    "model": "Salesforce/blip-image-captioning-base"
-  },
-  "ocr": {
-    "mode": "auto",
-    "model": "tesseract:eng+jpn"
-  },
-  "watch": {
-    "interval_seconds": 30,
-    "min_quiet_seconds": 2
-  },
-  "mock": false
+  "outputRoot": "C:\\TimelineData\\image",
+  "appdataRoot": "C:\\TimelineData\\image\\.timeline-for-image-state",
+  "computeMode": "cpu",
+  "ocrMode": "auto",
+  "privacyFilter": "none"
 }

@@ -2,119 +2,106 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import load_config
-from .contracts import RuntimePaths
 from .fs_utils import read_json, write_json
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-SETTINGS_ENV = "TIMELINE_FOR_IMAGE_SETTINGS_PATH"
-SETTINGS_EXAMPLE_ENV = "TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH"
+
+@dataclass(frozen=True)
+class Settings:
+    schema_version: int
+    input_roots: list[str]
+    output_root: str
+    appdata_root: str
+    compute_mode: str
+    ocr_mode: str
+    privacy_filter: str
 
 
 def settings_path() -> Path:
-    override = os.environ.get(SETTINGS_ENV)
-    if override:
-        return path_from_user_value(override)
-    return PROJECT_ROOT / "settings.json"
+    return Path(os.environ.get("TIMELINE_FOR_IMAGE_SETTINGS_PATH", "/workspace/settings.json"))
 
 
-def settings_example_path(settings_file: Path | None = None) -> Path:
-    override = os.environ.get(SETTINGS_EXAMPLE_ENV)
-    if override:
-        return path_from_user_value(override)
-    if settings_file is not None:
-        sibling = settings_file.parent / "settings.example.json"
-        if sibling.exists():
-            return sibling
-    return PROJECT_ROOT / "settings.example.json"
-
-
-def load_settings() -> dict[str, Any]:
-    path = settings_path()
-    if not path.exists():
-        return {}
-    return load_config(str(path))
+def settings_example_path() -> Path:
+    return Path(os.environ.get("TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH", "/workspace/settings.example.json"))
 
 
 def init_settings() -> tuple[bool, Path]:
-    target = settings_path()
-    if target.exists():
-        return False, target
-    example = settings_example_path(target)
-    payload = read_json(example) if example.exists() else default_settings()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    write_json(target, payload)
-    return True, target
+    path = settings_path()
+    if path.exists():
+        return False, path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    example = settings_example_path()
+    if example.exists():
+        shutil.copyfile(example, path)
+    else:
+        write_json(path, default_settings_payload())
+    return True, path
 
 
-def default_settings() -> dict[str, Any]:
+def load_settings() -> Settings:
+    if not settings_path().exists():
+        init_settings()
+    payload = read_json(settings_path())
+    return Settings(
+        schema_version=int(payload.get("schemaVersion") or payload.get("schema_version") or 1),
+        input_roots=[str(value) for value in payload.get("inputRoots", [])],
+        output_root=str(payload.get("outputRoot") or "C:\\TimelineData\\image"),
+        appdata_root=str(payload.get("appdataRoot") or "C:\\TimelineData\\image\\.timeline-for-image-state"),
+        compute_mode=str(payload.get("computeMode") or "cpu"),
+        ocr_mode=str(payload.get("ocrMode") or "auto"),
+        privacy_filter=str(payload.get("privacyFilter") or "none"),
+    )
+
+
+def save_settings(settings: Settings) -> None:
+    write_json(settings_path(), settings_to_payload(settings))
+
+
+def settings_to_payload(settings: Settings) -> dict[str, Any]:
     return {
-        "sources": [
-            {
-                "path": "C:\\Users\\amano\\Pictures\\",
-                "recursive": True,
-            }
-        ],
-        "outputs_root": "C:\\Users\\amano\\image\\",
-        "appdata_root": "C:\\Users\\amano\\image\\.timeline-for-image-state",
-        "caption": {
-            "mode": "local",
-            "model": "Salesforce/blip-image-captioning-base",
-        },
-        "ocr": {
-            "mode": "auto",
-            "model": "tesseract:eng+jpn",
-        },
-        "watch": {
-            "interval_seconds": 30,
-            "min_quiet_seconds": 2,
-        },
-        "mock": False,
+        "schemaVersion": settings.schema_version,
+        "inputRoots": settings.input_roots,
+        "outputRoot": settings.output_root,
+        "appdataRoot": settings.appdata_root,
+        "computeMode": settings.compute_mode,
+        "ocrMode": settings.ocr_mode,
+        "privacyFilter": settings.privacy_filter,
     }
 
 
-def normalize_local_path(value: str) -> str:
-    if os.name == "nt":
-        return value
-    match = re.match(r"^([A-Za-z]):[\\/]*(.*)$", value)
-    if not match:
-        return value
-    drive = match.group(1).lower()
-    rest = match.group(2).replace("\\", "/").strip("/")
-    return f"/mnt/{drive}/{rest}" if rest else f"/mnt/{drive}"
+def default_settings_payload() -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "inputRoots": ["C:\\TimelineData\\input-image\\"],
+        "outputRoot": "C:\\TimelineData\\image",
+        "appdataRoot": "C:\\TimelineData\\image\\.timeline-for-image-state",
+        "computeMode": "cpu",
+        "ocrMode": "auto",
+        "privacyFilter": "none",
+    }
 
 
-def path_from_user_value(value: str) -> Path:
-    return Path(normalize_local_path(value)).expanduser().resolve()
+def resolve_local_path(value: str) -> Path:
+    normalized = value.strip()
+    match = re.match(r"^([A-Za-z]):[\\/]*(.*)$", normalized)
+    if match:
+        drive = match.group(1).lower()
+        rest = match.group(2).replace("\\", "/")
+        return Path("/mnt") / drive / rest
+    return Path(normalized).expanduser()
 
 
-def load_runtime_paths(settings: dict[str, Any] | None = None) -> RuntimePaths:
-    settings = settings or {}
-    appdata_override = os.environ.get("TIMELINE_FOR_IMAGE_APPDATA_ROOT")
-    settings_appdata = settings.get("appdata_root")
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if appdata_override:
-        appdata_root = path_from_user_value(appdata_override)
-    elif isinstance(settings_appdata, str) and settings_appdata:
-        appdata_root = path_from_user_value(settings_appdata)
-    elif local_app_data:
-        appdata_root = (Path(local_app_data) / "TimelineForImage").resolve()
-    else:
-        appdata_root = (Path.home() / ".timeline-for-image").resolve()
+def resolved_input_roots(settings: Settings) -> list[Path]:
+    return [resolve_local_path(value).resolve() for value in settings.input_roots]
 
-    outputs_override = os.environ.get("TIMELINE_FOR_IMAGE_OUTPUTS_ROOT")
-    settings_outputs = settings.get("outputs_root")
-    if outputs_override:
-        outputs_root = path_from_user_value(outputs_override)
-    elif isinstance(settings_outputs, str) and settings_outputs:
-        outputs_root = path_from_user_value(settings_outputs)
-    else:
-        outputs_root = appdata_root / "outputs"
-    return RuntimePaths(
-        appdata_root=appdata_root,
-        outputs_root=outputs_root,
-        state_root=appdata_root / "state",
-    )
+
+def resolved_output_root(settings: Settings) -> Path:
+    return resolve_local_path(settings.output_root).resolve()
+
+
+def resolved_appdata_root(settings: Settings) -> Path:
+    return resolve_local_path(settings.appdata_root).resolve()
