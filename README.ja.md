@@ -4,6 +4,20 @@
 
 この製品は CLI 専用です。Web UI はありません。元画像は編集せず、出力 ZIP にも元画像は含めません。
 
+## README の役割
+
+このリポジトリでは、README 群の役割を次のように分けます。
+
+| ファイル | 役割 |
+| --- | --- |
+| `README.md` | リポジトリの入口。概要、正規ドキュメントへの誘導、最低限の起動入口だけを書く。 |
+| `README.ja.md` | 正規の製品ドキュメント。設定、出力契約、CLI、運用、テスト手順をここに集約する。 |
+| `MODEL_AND_RUNTIME_NOTES.md` | モデル、OCR、外部API利用有無など、runtime と backend の補足を書く。 |
+| `THIRD_PARTY_NOTICES.md` | 利用している第三者コンポーネントの通知を書く。 |
+| `schemas\*.schema.json` | `settings.json` と `image_record.json` の機械可読な契約を固定する。 |
+
+通常の判断では、この `README.ja.md` を一次情報として扱います。設定項目や出力形式を変える場合は、対応する schema と実装も同時に更新します。
+
 ## できること
 
 - 固定された入力ディレクトリから画像ファイルを読む
@@ -87,13 +101,15 @@ Master output:
         normalized_image.jpg
         debug_overlay.jpg
   downloads/
-    TimelineForImage-<timestamp>.zip
+    TimelineForImage-export-<timestamp>-<id>.zip
+    TimelineForImage-selected.zip
   latest/
     TimelineForImage-export.zip
 ```
 
 `image_record.json` が画像ごとの主成果物です。
 スキーマは `schemas\image_record.schema.json` で固定しています。
+`downloads\TimelineForImage-selected.zip` は `items download` 実行時に作成されます。自動 export ZIP と handoff ZIP のどちらにも元画像は含めません。
 
 ```json
 {
