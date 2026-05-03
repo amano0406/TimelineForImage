@@ -19,5 +19,7 @@ RUN pip install --no-cache-dir -r /workspace/worker/requirements.txt
 
 COPY worker/src /workspace/worker/src
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 CMD ["python", "-m", "timeline_for_image_worker", "health"]
+
 ENTRYPOINT ["python", "-m", "timeline_for_image_worker"]
 CMD ["serve"]

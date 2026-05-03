@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import struct
 import zipfile
 from pathlib import Path
@@ -69,6 +70,23 @@ def test_host_cli_is_blocked_outside_docker(monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "is_in_docker", lambda: False)
     assert main(["doctor"]) == 1
     assert "Host CLI execution is disabled" in capsys.readouterr().err
+
+
+def test_health_does_not_create_settings(tmp_path: Path, monkeypatch, capsys) -> None:
+    settings_path = tmp_path / "settings.json"
+    state_root = tmp_path / "state"
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT", str(state_root))
+
+    assert main(["--json", "health"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["ok"] is True
+    assert payload["state_root"]["path"] == str(state_root.resolve())
+    assert not settings_path.exists()
+    assert state_root.exists()
+    assert not list(state_root.glob(".healthcheck-*.tmp"))
 
 
 def test_settings_reject_removed_keys(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -249,6 +267,60 @@ def test_write_json_replaces_atomically_without_temp_leftovers(tmp_path: Path) -
 
     assert json.loads(target.read_text(encoding="utf-8")) == {"value": 2}
     assert not list(tmp_path.glob(".payload.json.*.tmp"))
+
+
+def test_maintenance_cleanup_prunes_runs_and_generated_downloads(tmp_path: Path, monkeypatch, capsys) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    state_root = tmp_path / "state"
+    settings_path = tmp_path / "settings.json"
+    input_root.mkdir()
+    write_test_settings(settings_path, input_root, output_root)
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    run_names = [
+        "run-20260504T010000Z-aaaaaaaa",
+        "run-20260504T020000Z-bbbbbbbb",
+        "run-20260504T030000Z-cccccccc",
+    ]
+    for run_name in run_names:
+        run_dir = state_root / "runs" / run_name
+        run_dir.mkdir(parents=True)
+        write_json(run_dir / "result.json", {"run_id": run_name})
+
+    downloads_dir = output_root / "downloads"
+    downloads_dir.mkdir(parents=True)
+    selected_zip = downloads_dir / "TimelineForImage-selected.zip"
+    selected_zip.write_bytes(b"selected")
+    download_paths = [
+        downloads_dir / "TimelineForImage-export-20260504T010000Z-aaaaaaaa.zip",
+        downloads_dir / "TimelineForImage-export-20260504T020000Z-bbbbbbbb.zip",
+        downloads_dir / "TimelineForImage-export-20260504T030000Z-cccccccc.zip",
+    ]
+    for index, path in enumerate(download_paths, start=1):
+        path.write_bytes(f"export-{index}".encode("utf-8"))
+        os.utime(path, (index, index))
+
+    assert main(["--json", "maintenance", "cleanup", "--keep-runs", "1", "--keep-downloads", "1", "--dry-run"]) == 0
+    dry_run = json.loads(capsys.readouterr().out)
+    assert dry_run["dry_run"] is True
+    assert dry_run["runs"]["removed_count"] == 2
+    assert dry_run["downloads"]["removed_count"] == 2
+    assert all((state_root / "runs" / run_name).exists() for run_name in run_names)
+    assert all(path.exists() for path in download_paths)
+
+    assert main(["--json", "maintenance", "cleanup", "--keep-runs", "1", "--keep-downloads", "1"]) == 0
+    cleanup = json.loads(capsys.readouterr().out)
+    assert cleanup["dry_run"] is False
+    assert cleanup["runs"]["removed_count"] == 2
+    assert cleanup["downloads"]["removed_count"] == 2
+    assert sorted(path.name for path in (state_root / "runs").iterdir() if path.is_dir()) == [run_names[-1]]
+    assert sorted(path.name for path in downloads_dir.glob("*.zip")) == [
+        "TimelineForImage-export-20260504T030000Z-cccccccc.zip",
+        "TimelineForImage-selected.zip",
+    ]
 
 
 def test_serve_once_refreshes_and_exits(tmp_path: Path, monkeypatch, capsys) -> None:

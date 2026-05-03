@@ -289,6 +289,85 @@ def expand_item_ids(values: list[str]) -> list[str]:
     return item_ids
 
 
+def cleanup_generated_artifacts(
+    settings: Settings,
+    keep_runs: int = 100,
+    keep_downloads: int = 20,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    if keep_runs < 0:
+        raise ValueError("--keep-runs must be greater than or equal to 0.")
+    if keep_downloads < 0:
+        raise ValueError("--keep-downloads must be greater than or equal to 0.")
+
+    state_root = internal_state_root()
+    with exclusive_lock(state_root, "catalog"):
+        return cleanup_generated_artifacts_unlocked(settings, keep_runs, keep_downloads, dry_run)
+
+
+def cleanup_generated_artifacts_unlocked(
+    settings: Settings,
+    keep_runs: int,
+    keep_downloads: int,
+    dry_run: bool,
+) -> dict[str, Any]:
+    runs_dir = internal_state_root() / "runs"
+    output_root = resolved_output_root(settings)
+    run_candidates = sorted(
+        [path for path in runs_dir.iterdir() if path.is_dir() and not path.is_symlink()] if runs_dir.exists() else [],
+        key=lambda path: path.name,
+        reverse=True,
+    )
+    download_candidates = sorted(
+        generated_download_candidates(output_root / "downloads"),
+        key=lambda path: (safe_mtime(path), path.name),
+        reverse=True,
+    )
+    runs_to_remove = run_candidates[keep_runs:]
+    downloads_to_remove = download_candidates[keep_downloads:]
+
+    if not dry_run:
+        for path in runs_to_remove:
+            shutil.rmtree(path)
+        for path in downloads_to_remove:
+            path.unlink()
+
+    return {
+        "dry_run": dry_run,
+        "runs": {
+            "root": str(runs_dir),
+            "candidate_count": len(run_candidates),
+            "kept_count": len(run_candidates) - len(runs_to_remove),
+            "removed_count": len(runs_to_remove),
+            "removed": [str(path) for path in runs_to_remove],
+        },
+        "downloads": {
+            "root": str(output_root / "downloads"),
+            "candidate_count": len(download_candidates),
+            "kept_count": len(download_candidates) - len(downloads_to_remove),
+            "removed_count": len(downloads_to_remove),
+            "removed": [str(path) for path in downloads_to_remove],
+        },
+    }
+
+
+def generated_download_candidates(downloads_dir: Path) -> list[Path]:
+    if not downloads_dir.exists():
+        return []
+    return [
+        path
+        for path in downloads_dir.glob("TimelineForImage-*.zip")
+        if path.is_file() and path.name != "TimelineForImage-selected.zip"
+    ]
+
+
+def safe_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return 0.0
+
+
 def list_runs(settings: Settings) -> list[dict[str, Any]]:
     runs_dir = internal_state_root() / "runs"
     rows = []

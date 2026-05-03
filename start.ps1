@@ -127,6 +127,8 @@ Write-Host "  .\cli.ps1 files list"
 Write-Host "  .\cli.ps1 items refresh --max-items 4"
 Write-Host "  .\cli.ps1 items list"
 Write-Host "  .\cli.ps1 runs list"
+Write-Host "  .\cli.ps1 health"
+Write-Host "  .\cli.ps1 maintenance cleanup --dry-run"
 Write-Host ""
 $psResult = Invoke-TfiHiddenProcess -FilePath $docker -Arguments @("compose", "--project-directory", $repoRoot, "ps") -WriteOutput
 exit $psResult.ExitCode

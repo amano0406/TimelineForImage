@@ -13,7 +13,15 @@ from .discovery import discover_images
 from .fs_utils import read_json, write_json
 from .locks import exclusive_lock
 from .model_inventory import list_models
-from .processor import OCR_MODE, REQUIRED_ITEM_FILES, list_items, list_runs, refresh_items, remove_items
+from .processor import (
+    OCR_MODE,
+    REQUIRED_ITEM_FILES,
+    cleanup_generated_artifacts,
+    list_items,
+    list_runs,
+    refresh_items,
+    remove_items,
+)
 from .settings import (
     Settings,
     internal_state_root,
@@ -77,11 +85,21 @@ def main(argv: list[str] | None = None) -> int:
     serve_parser.add_argument("--max-items", type=int)
     serve_parser.add_argument("--once", action="store_true")
 
+    sub.add_parser("health")
     sub.add_parser("doctor")
+
+    maintenance_parser = sub.add_parser("maintenance")
+    maintenance_sub = maintenance_parser.add_subparsers(dest="maintenance_command", required=True)
+    cleanup_parser = maintenance_sub.add_parser("cleanup")
+    cleanup_parser.add_argument("--keep-runs", type=int, default=100)
+    cleanup_parser.add_argument("--keep-downloads", type=int, default=20)
+    cleanup_parser.add_argument("--dry-run", action="store_true")
 
     args = parser.parse_args(argv)
     try:
         enforce_docker_first()
+        if args.command == "health":
+            return handle_health(args)
         if args.command == "settings":
             return handle_settings(args)
         if args.command == "serve":
@@ -97,6 +115,8 @@ def main(argv: list[str] | None = None) -> int:
             return emit(args, {"models": list_models()}, format_models(list_models()))
         if args.command == "doctor":
             return handle_doctor(args, settings)
+        if args.command == "maintenance":
+            return handle_maintenance(args, settings)
     except Exception as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -208,6 +228,21 @@ def write_worker_event(args: argparse.Namespace, event: dict[str, Any]) -> None:
         print(f"worker: {event['event']} error={event.get('error', 'unknown')}", file=sys.stderr, flush=True)
 
 
+def handle_health(args: argparse.Namespace) -> int:
+    state_root = internal_state_root()
+    state_root.mkdir(parents=True, exist_ok=True)
+    probe = state_root / f".healthcheck-{os.getpid()}.tmp"
+    probe.write_text("ok", encoding="utf-8")
+    probe.unlink(missing_ok=True)
+    state_check = path_check(state_root, needs_write=True)
+    payload = {
+        "ok": state_check["writable"],
+        "state_root": state_check,
+    }
+    text = f"ok: {payload['ok']}\nstate_root: {state_check['path']} writable={state_check['writable']}"
+    return emit(args, payload, text)
+
+
 def handle_files(args: argparse.Namespace, settings: Settings) -> int:
     if args.files_command == "list":
         items = discover_images(resolved_input_roots(settings))
@@ -256,6 +291,18 @@ def handle_runs(args: argparse.Namespace, settings: Settings) -> int:
                 return emit(args, detail, format_run(detail))
         raise FileNotFoundError(f"Run not found: {args.run_id}")
     raise ValueError("Unsupported runs command.")
+
+
+def handle_maintenance(args: argparse.Namespace, settings: Settings) -> int:
+    if args.maintenance_command == "cleanup":
+        result = cleanup_generated_artifacts(
+            settings,
+            keep_runs=args.keep_runs,
+            keep_downloads=args.keep_downloads,
+            dry_run=args.dry_run,
+        )
+        return emit(args, result, format_cleanup(result))
+    raise ValueError("Unsupported maintenance command.")
 
 
 def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
@@ -483,6 +530,19 @@ def format_remove(result: dict[str, Any]) -> str:
     ]
     rows.extend(f"removed: {row['item_id']} {row.get('relative_path')}" for row in result["removed"])
     rows.extend(f"missing: {item_id}" for item_id in result["missing"])
+    return "\n".join(rows)
+
+
+def format_cleanup(result: dict[str, Any]) -> str:
+    rows = [
+        f"dry_run: {result['dry_run']}",
+        f"runs_kept: {result['runs']['kept_count']}",
+        f"runs_removed: {result['runs']['removed_count']}",
+        f"downloads_kept: {result['downloads']['kept_count']}",
+        f"downloads_removed: {result['downloads']['removed_count']}",
+    ]
+    rows.extend(f"removed_run: {path}" for path in result["runs"]["removed"])
+    rows.extend(f"removed_download: {path}" for path in result["downloads"]["removed"])
     return "\n".join(rows)
 
 

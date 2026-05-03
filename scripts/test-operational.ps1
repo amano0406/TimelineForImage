@@ -215,6 +215,10 @@ try {
     Assert-Tfi ($secondRefresh.processed_count -eq 0) "second refresh should skip already processed items."
     Assert-Tfi ($secondRefresh.skipped_count -eq 2) "second refresh skipped count was not 2."
 
+    $extraRefresh = Invoke-TfiCliJson -Arguments @("items", "refresh", "--max-items", "1", "--reprocess-duplicates")
+    Assert-Tfi ($extraRefresh.processed_count -eq 1) "reprocess refresh did not process 1 item."
+    Assert-Tfi ($extraRefresh.failed_count -eq 0) "reprocess refresh reported failures."
+
     $items = Invoke-TfiCliJson -Arguments @("items", "list", "--page", "1", "--page-size", "10")
     Assert-Tfi ($items.count -eq 2) "items list count was not 2."
     $firstItem = $items.items[0]
@@ -241,6 +245,12 @@ try {
     Assert-Tfi ($entryNames -contains "README.md") "download archive did not contain README.md."
     Assert-Tfi ([bool]($entryNames | Where-Object { $_ -like "items/*/image_record.json" })) "download archive did not contain image_record.json."
     Assert-Tfi (-not [bool]($entryNames | Where-Object { $_ -like "*.png" })) "download archive unexpectedly contained source images."
+
+    $cleanupDryRun = Invoke-TfiCliJson -Arguments @("maintenance", "cleanup", "--keep-runs", "1", "--keep-downloads", "1", "--dry-run")
+    Assert-Tfi ([bool]$cleanupDryRun.dry_run) "maintenance cleanup did not report dry_run."
+    Assert-Tfi ($cleanupDryRun.runs.removed_count -ge 1) "maintenance cleanup did not identify old runs."
+    Assert-Tfi ($cleanupDryRun.downloads.removed_count -ge 1) "maintenance cleanup did not identify old downloads."
+    Assert-Tfi (Test-Path -LiteralPath $archivePath) "maintenance cleanup dry-run deleted the selected download archive."
 
     $itemDir = ConvertFrom-TfiContainerPath -ContainerPath ([string]$firstItem.output_dir)
     Assert-Tfi (Test-Path -LiteralPath $itemDir) "item output directory did not exist before remove."

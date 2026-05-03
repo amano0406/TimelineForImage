@@ -150,7 +150,10 @@ Windows では PowerShell が正面玄関です。
 .\cli.ps1 runs list --page 1 --page-size 20
 .\cli.ps1 runs show --run-id <RUN_ID>
 .\cli.ps1 models list
+.\cli.ps1 health
 .\cli.ps1 doctor
+.\cli.ps1 maintenance cleanup --dry-run
+.\cli.ps1 maintenance cleanup --keep-runs 100 --keep-downloads 20
 ```
 
 `.\start.ps1` は Docker worker を常時起動します。worker は `settings.json` の `inputRoots` を定期的に確認し、新規または変更された画像だけを処理します。
@@ -204,6 +207,19 @@ Docker resources:
 - `app-data`: 製品内部の runtime data
 - `cache-data`: OCRや後続モデル用 cache
 - `C:\` bind mount: 入力と出力のローカルパス解決
+
+## 運用メンテナンス
+
+Docker コンテナには `health` コマンドを使う healthcheck を設定しています。`health` は `settings.json` を自動生成せず、内部状態ディレクトリの書き込み可能性だけを軽量確認します。
+
+古い run 履歴と自動生成 export ZIP を整理する場合:
+
+```powershell
+.\cli.ps1 maintenance cleanup --dry-run
+.\cli.ps1 maintenance cleanup --keep-runs 100 --keep-downloads 20
+```
+
+`maintenance cleanup` は `runs` と `downloads\TimelineForImage-*.zip` を対象にします。`TimelineForImage-selected.zip`、`latest\TimelineForImage-export.zip`、元画像、item 生成物は削除対象にしません。
 
 ## Testing
 
