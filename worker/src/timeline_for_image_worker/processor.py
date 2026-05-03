@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,7 @@ def refresh_items_unlocked(settings: Settings, max_items: int | None = None, rep
             "items": [],
         }
 
-    run_id = "run-" + now_iso().replace(":", "").replace("+", "Z")
+    run_id = unique_artifact_id("run")
     run_dir = state_root / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     write_status(run_dir, RunStatus(run_id=run_id, state="running", current_stage="discover", started_at=now_iso(), updated_at=now_iso()))
@@ -176,7 +177,7 @@ def create_download_zip(output_root: Path, item_dirs: list[Path]) -> Path | None
         return None
     downloads = output_root / "downloads"
     downloads.mkdir(parents=True, exist_ok=True)
-    archive_path = downloads / f"TimelineForImage-{now_iso().replace(':', '').replace('+', 'Z')}.zip"
+    archive_path = downloads / f"TimelineForImage-{unique_artifact_id('export')}.zip"
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("README.md", "# TimelineForImage Export\n\nOriginal image files are not included.\n")
         for item_dir in item_dirs:
@@ -190,6 +191,11 @@ def sync_latest(output_root: Path, archive_path: Path | None) -> None:
     latest.mkdir(parents=True, exist_ok=True)
     if archive_path and archive_path.exists():
         shutil.copyfile(archive_path, latest / "TimelineForImage-export.zip")
+
+
+def unique_artifact_id(prefix: str) -> str:
+    timestamp = now_iso().replace(":", "").replace("+", "Z")
+    return f"{prefix}-{timestamp}-{uuid.uuid4().hex[:8]}"
 
 
 def write_status(run_dir: Path, status: RunStatus) -> None:

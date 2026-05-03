@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator
 import timeline_for_image_worker.cli as cli
 from timeline_for_image_worker.cli import main
 from timeline_for_image_worker.discovery import discover_images
+from timeline_for_image_worker.fs_utils import write_json
 from timeline_for_image_worker.locks import LockTimeoutError, exclusive_lock
 from timeline_for_image_worker.settings import Settings, default_settings_payload, load_settings, settings_to_payload
 
@@ -216,6 +217,38 @@ def test_refresh_skips_no_changes_without_creating_run(tmp_path: Path, monkeypat
     assert main(["--json", "runs", "list"]) == 0
     runs = json.loads(capsys.readouterr().out)
     assert runs["count"] == 1
+
+
+def test_reprocess_refresh_uses_unique_run_ids(tmp_path: Path, monkeypatch, capsys) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    state_root = tmp_path / "state"
+    settings_path = tmp_path / "settings.json"
+    input_root.mkdir()
+    (input_root / "sample.png").write_bytes(minimal_png(8, 6))
+    write_test_settings(settings_path, input_root, output_root)
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    assert main(["--json", "items", "refresh", "--reprocess-duplicates"]) == 0
+    first = json.loads(capsys.readouterr().out)
+    assert main(["--json", "items", "refresh", "--reprocess-duplicates"]) == 0
+    second = json.loads(capsys.readouterr().out)
+
+    assert first["run_id"] != second["run_id"]
+    assert (state_root / "runs" / first["run_id"] / "result.json").exists()
+    assert (state_root / "runs" / second["run_id"] / "result.json").exists()
+
+
+def test_write_json_replaces_atomically_without_temp_leftovers(tmp_path: Path) -> None:
+    target = tmp_path / "payload.json"
+
+    write_json(target, {"value": 1})
+    write_json(target, {"value": 2})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"value": 2}
+    assert not list(tmp_path.glob(".payload.json.*.tmp"))
 
 
 def test_serve_once_refreshes_and_exits(tmp_path: Path, monkeypatch, capsys) -> None:
