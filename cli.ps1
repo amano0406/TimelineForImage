@@ -19,4 +19,8 @@ if (-not $?) {
 }
 
 & $docker compose --project-directory $repoRoot exec -T worker python -m timeline_for_image_worker @CliArgs
-exit $LASTEXITCODE
+$exitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+if ($null -eq $exitCodeVariable) {
+    exit 0
+}
+exit $global:LASTEXITCODE

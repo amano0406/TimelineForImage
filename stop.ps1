@@ -6,4 +6,8 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = $PSScriptRoot
 docker compose --project-directory $repoRoot down
-exit $LASTEXITCODE
+$exitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+if ($null -eq $exitCodeVariable) {
+    exit 0
+}
+exit $global:LASTEXITCODE

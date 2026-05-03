@@ -28,4 +28,8 @@ Write-Host "  .\cli.ps1 items list"
 Write-Host "  .\cli.ps1 runs list"
 Write-Host ""
 & $docker compose --project-directory $repoRoot ps
-exit $LASTEXITCODE
+$exitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+if ($null -eq $exitCodeVariable) {
+    exit 0
+}
+exit $global:LASTEXITCODE
