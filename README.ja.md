@@ -197,3 +197,16 @@ docker compose run --rm --entrypoint sh worker -c "pip install --no-cache-dir -r
 cd C:\apps\TimelineForImage
 python -m unittest discover -s tests -p test_cli_ps1_download.py
 ```
+
+通常の `settings.json` や実データに触れず、一時設定・一時入力・一時出力・一時状態ディレクトリで運用フローを通すテスト:
+
+```powershell
+cd C:\apps\TimelineForImage
+.\scripts\test-operational.ps1
+```
+
+失敗時の成果物確認、または手元確認用に出力を残す場合:
+
+```powershell
+.\scripts\test-operational.ps1 -KeepOutput
+```
