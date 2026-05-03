@@ -37,10 +37,35 @@ jobs:
           docker compose run --rm --no-deps worker settings save --input-root /workspace/output/ci-operational/input --output-root /workspace/output/ci-operational/records
           docker compose run --rm --no-deps worker doctor
           docker compose run --rm --no-deps worker items refresh --max-items 2 --reprocess-duplicates
-          docker compose run --rm --no-deps worker items refresh
+          second_refresh="$(docker compose run --rm --no-deps worker --json items refresh)"
+          printf '%s' "$second_refresh" | python -c 'import json, sys; payload=json.load(sys.stdin); assert payload["state"] == "skipped_no_changes"; assert payload["run_id"] is None'
           docker compose run --rm --no-deps worker items list --page 1 --page-size 10
           docker compose run --rm --no-deps worker runs list --page 1 --page-size 10
           docker compose run --rm --no-deps worker items download --all
           test -f output/ci-operational/state/catalog.json
           test "$(find output/ci-operational/records/items -name image_record.json | wc -l)" -eq 2
           test -f output/ci-operational/records/downloads/TimelineForImage-selected.zip
+
+      - name: Run daemon worker smoke test
+        run: |
+          set -euo pipefail
+          trap 'docker compose down' EXIT
+          rm -rf output/ci-daemon
+          mkdir -p output/ci-daemon/input
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0isAAAAD0lEQVR4nGP4jwMwDKQEAAjcj3FNTHRjAAAAAElFTkSuQmCC' | base64 -d > output/ci-daemon/input/sample.png
+          TIMELINE_FOR_IMAGE_SETTINGS_PATH=/workspace/output/ci-daemon/settings.json \
+          TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT=/workspace/output/ci-daemon/state \
+          docker compose run --rm --no-deps worker settings save --input-root /workspace/output/ci-daemon/input --output-root /workspace/output/ci-daemon/records
+          TIMELINE_FOR_IMAGE_SETTINGS_PATH=/workspace/output/ci-daemon/settings.json \
+          TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT=/workspace/output/ci-daemon/state \
+          TIMELINE_FOR_IMAGE_WORKER_INTERVAL_SECONDS=3600 \
+          docker compose up -d
+          for _ in $(seq 1 30); do
+            if docker compose ps --status running worker | grep -q worker \
+              && test -f output/ci-daemon/records/items/*/image_record.json; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs worker
+          exit 1

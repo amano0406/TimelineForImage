@@ -35,11 +35,26 @@ def source_signature(item: ImageSource) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def needs_processing(catalog: dict[str, Any], item: ImageSource, reprocess_duplicates: bool) -> bool:
+def needs_processing(catalog: dict[str, Any], item: ImageSource, reprocess_duplicates: bool, output_root: Path | None = None) -> bool:
     if reprocess_duplicates:
         return True
     previous = catalog.get("items", {}).get(item.item_id)
-    return not previous or previous.get("signature") != source_signature(item)
+    if not previous:
+        return True
+    previous_output = Path(str(previous.get("output_dir") or ""))
+    if output_root is not None and not is_path_under_root(previous_output, output_root):
+        return True
+    if not all((previous_output / name).is_file() for name in ("convert_info.json", "timeline.json", "image_record.json")):
+        return True
+    return previous.get("signature") != source_signature(item)
+
+
+def is_path_under_root(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def update_catalog_item(catalog: dict[str, Any], item: ImageSource, output_dir: Path) -> None:

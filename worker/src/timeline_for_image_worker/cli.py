@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
 
 from .discovery import discover_images
 from .fs_utils import read_json, write_json
+from .locks import exclusive_lock
 from .model_inventory import list_models
-from .processor import OCR_MODE, list_items, list_runs, refresh_items, remove_items
+from .processor import OCR_MODE, REQUIRED_ITEM_FILES, list_items, list_runs, refresh_items, remove_items
 from .settings import (
     Settings,
     internal_state_root,
@@ -18,6 +21,7 @@ from .settings import (
     load_settings,
     resolved_input_roots,
     resolved_output_root,
+    resolve_local_path,
     save_settings,
     settings_path,
 )
@@ -51,6 +55,8 @@ def main(argv: list[str] | None = None) -> int:
     download_parser = items_sub.add_parser("download")
     download_parser.add_argument("--item-id", action="append")
     download_parser.add_argument("--all", action="store_true")
+    download_parser.add_argument("--to")
+    download_parser.add_argument("--overwrite", action="store_true")
     remove_parser = items_sub.add_parser("remove")
     remove_parser.add_argument("--item-id", action="append", default=[])
     remove_parser.add_argument("--dry-run", action="store_true")
@@ -66,6 +72,11 @@ def main(argv: list[str] | None = None) -> int:
     models_sub = models_parser.add_subparsers(dest="models_command", required=True)
     models_sub.add_parser("list")
 
+    serve_parser = sub.add_parser("serve")
+    serve_parser.add_argument("--interval-seconds", type=float)
+    serve_parser.add_argument("--max-items", type=int)
+    serve_parser.add_argument("--once", action="store_true")
+
     sub.add_parser("doctor")
 
     args = parser.parse_args(argv)
@@ -73,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
         enforce_docker_first()
         if args.command == "settings":
             return handle_settings(args)
+        if args.command == "serve":
+            return handle_serve(args)
         settings = load_settings()
         if args.command == "files":
             return handle_files(args, settings)
@@ -135,6 +148,66 @@ def handle_settings(args: argparse.Namespace) -> int:
     raise ValueError("Unsupported settings command.")
 
 
+def handle_serve(args: argparse.Namespace) -> int:
+    interval_seconds = worker_interval_seconds(args.interval_seconds)
+    while True:
+        event: dict[str, Any]
+        try:
+            settings = load_settings()
+            result = refresh_items(settings, max_items=args.max_items, reprocess_duplicates=False)
+            event = {
+                "event": "refresh_skipped_no_changes" if result["state"] == "skipped_no_changes" else "refresh_completed",
+                "ok": result["failed_count"] == 0,
+                "run_id": result["run_id"],
+                "source_count": result["source_count"],
+                "processed_count": result["processed_count"],
+                "skipped_count": result["skipped_count"],
+                "failed_count": result["failed_count"],
+                "archive_path": result.get("archive_path"),
+                "next_refresh_seconds": None if args.once else interval_seconds,
+            }
+            write_worker_event(args, event)
+            if args.once:
+                return 0 if event["ok"] else 1
+        except Exception as exc:
+            event = {
+                "event": "refresh_failed",
+                "ok": False,
+                "error": str(exc),
+                "next_refresh_seconds": None if args.once else interval_seconds,
+            }
+            write_worker_event(args, event)
+            if args.once:
+                return 1
+        time.sleep(interval_seconds)
+
+
+def worker_interval_seconds(value: float | None) -> float:
+    if value is None:
+        raw = os.environ.get("TIMELINE_FOR_IMAGE_WORKER_INTERVAL_SECONDS", "60")
+        value = float(raw)
+    if value <= 0:
+        raise ValueError("Worker interval must be greater than 0 seconds.")
+    return value
+
+
+def write_worker_event(args: argparse.Namespace, event: dict[str, Any]) -> None:
+    if args.json:
+        print(json.dumps(event, ensure_ascii=False), flush=True)
+        return
+    if event["ok"]:
+        print(
+            "worker: "
+            f"{event['event']} run_id={event.get('run_id') or 'none'} "
+            f"processed={event.get('processed_count', 0)} "
+            f"skipped={event.get('skipped_count', 0)} "
+            f"failed={event.get('failed_count', 0)}",
+            flush=True,
+        )
+    else:
+        print(f"worker: {event['event']} error={event.get('error', 'unknown')}", file=sys.stderr, flush=True)
+
+
 def handle_files(args: argparse.Namespace, settings: Settings) -> int:
     if args.files_command == "list":
         items = discover_images(resolved_input_roots(settings))
@@ -159,7 +232,7 @@ def handle_items(args: argparse.Namespace, settings: Settings) -> int:
         text = "\n".join([format_page_summary(payload), *text_rows]) if text_rows else "No items."
         return emit(args, payload, text)
     if args.items_command == "download":
-        archive = create_selected_download(settings, args.item_id or [], args.all)
+        archive = create_selected_download(settings, args.item_id or [], args.all, args.to, args.overwrite)
         return emit(args, {"archive_path": str(archive)}, f"archive_path: {archive}")
     if args.items_command == "remove":
         result = remove_items(settings, args.item_id, dry_run=args.dry_run)
@@ -240,21 +313,52 @@ def doctor_ocr() -> dict[str, Any]:
         return {"mode": OCR_MODE, "ready": False, "languages": [], "warning": str(exc)}
 
 
-def create_selected_download(settings: Settings, item_ids: list[str], all_items: bool) -> Path:
+def create_selected_download(
+    settings: Settings,
+    item_ids: list[str],
+    all_items: bool,
+    destination: str | None = None,
+    overwrite: bool = False,
+) -> Path:
+    with exclusive_lock(internal_state_root(), "catalog"):
+        return create_selected_download_unlocked(settings, item_ids, all_items, destination, overwrite)
+
+
+def create_selected_download_unlocked(
+    settings: Settings,
+    item_ids: list[str],
+    all_items: bool,
+    destination: str | None = None,
+    overwrite: bool = False,
+) -> Path:
     rows = list_items(settings)
     selected = rows if all_items else [row for row in rows if row["item_id"] in set(item_ids)]
     if not selected:
         raise ValueError("No items selected for download.")
     output_root = resolved_output_root(settings)
-    downloads = output_root / "downloads"
-    downloads.mkdir(parents=True, exist_ok=True)
-    archive = downloads / "TimelineForImage-selected.zip"
+    archive = resolve_download_destination(output_root, destination, overwrite)
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("README.md", "# TimelineForImage selected export\n\nOriginal image files are not included.\n")
         for row in selected:
             item_dir = Path(row["output_dir"])
-            for name in ["convert_info.json", "timeline.json", "image_record.json"]:
-                zf.write(item_dir / name, f"items/{item_dir.name}/{name}")
+            for name in REQUIRED_ITEM_FILES:
+                path = item_dir / name
+                if not path.is_file():
+                    raise FileNotFoundError(f"Item artifact does not exist: {path}")
+                zf.write(path, f"items/{item_dir.name}/{name}")
+    return archive
+
+
+def resolve_download_destination(output_root: Path, destination: str | None, overwrite: bool) -> Path:
+    if destination and destination.strip():
+        target = resolve_local_path(destination)
+        archive = target if target.suffix.lower() == ".zip" else target / "TimelineForImage-selected.zip"
+    else:
+        archive = output_root / "downloads" / "TimelineForImage-selected.zip"
+        overwrite = True
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    if archive.exists() and not overwrite:
+        raise FileExistsError(f"Download target already exists: {archive}")
     return archive
 
 

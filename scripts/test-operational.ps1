@@ -210,6 +210,8 @@ try {
     Assert-Tfi (Test-Path -LiteralPath (Join-Path $stateRoot "catalog.json")) "Internal state catalog was not created in the test state root."
 
     $secondRefresh = Invoke-TfiCliJson -Arguments @("items", "refresh")
+    Assert-Tfi ($secondRefresh.state -eq "skipped_no_changes") "second refresh should report skipped_no_changes."
+    Assert-Tfi ($null -eq $secondRefresh.run_id) "second refresh should not create a run."
     Assert-Tfi ($secondRefresh.processed_count -eq 0) "second refresh should skip already processed items."
     Assert-Tfi ($secondRefresh.skipped_count -eq 2) "second refresh skipped count was not 2."
 
@@ -219,7 +221,7 @@ try {
     Assert-Tfi ($null -ne $firstItem.item_id) "first item did not have an item_id."
 
     $runs = Invoke-TfiCliJson -Arguments @("runs", "list", "--page", "1", "--page-size", "10")
-    Assert-Tfi ($runs.count -ge 2) "runs list did not include expected runs."
+    Assert-Tfi ($runs.count -ge 1) "runs list did not include expected runs."
 
     $run = Invoke-TfiCliJson -Arguments @("runs", "show", "--run-id", $refresh.run_id)
     Assert-Tfi ($run.result.processed_count -eq 2) "runs show did not report 2 processed items."

@@ -10,6 +10,7 @@ from jsonschema import Draft202012Validator
 import timeline_for_image_worker.cli as cli
 from timeline_for_image_worker.cli import main
 from timeline_for_image_worker.discovery import discover_images
+from timeline_for_image_worker.locks import LockTimeoutError, exclusive_lock
 from timeline_for_image_worker.settings import Settings, default_settings_payload, load_settings, settings_to_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,6 +32,35 @@ def test_discover_png_dimensions(tmp_path: Path) -> None:
     assert items[0].width == 3
     assert items[0].height == 2
     assert items[0].format_name == "PNG"
+
+
+def test_files_list_json_reports_input_images(tmp_path: Path, monkeypatch, capsys) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    state_root = tmp_path / "state"
+    settings_path = tmp_path / "settings.json"
+    nested = input_root / "nested"
+    nested.mkdir(parents=True)
+    (input_root / "sample-a.png").write_bytes(minimal_png(8, 6))
+    (nested / "sample-b.png").write_bytes(minimal_png(3, 2))
+    write_test_settings(settings_path, input_root, output_root)
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    assert main(["--json", "files", "list", "--page", "1", "--page-size", "10"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 2
+    assert payload["page_count"] == 1
+    assert len(payload["files"]) == 2
+    by_path = {row["relative_path"]: row for row in payload["files"]}
+    assert set(by_path) == {"sample-a.png", "nested/sample-b.png"}
+    first = by_path["sample-a.png"]
+    assert first["item_id"].startswith("image-")
+    assert first["format_name"] == "PNG"
+    assert first["width"] == 8
+    assert first["height"] == 6
+    assert first["sha256"]
 
 
 def test_host_cli_is_blocked_outside_docker(monkeypatch, capsys) -> None:
@@ -162,6 +192,66 @@ def test_refresh_creates_master_item_artifacts(tmp_path: Path, monkeypatch) -> N
         assert f"items/{item_dir.name}/image_record.json" in archive.namelist()
 
 
+def test_refresh_skips_no_changes_without_creating_run(tmp_path: Path, monkeypatch, capsys) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    state_root = tmp_path / "state"
+    settings_path = tmp_path / "settings.json"
+    input_root.mkdir()
+    (input_root / "sample.png").write_bytes(minimal_png(8, 6))
+    write_test_settings(settings_path, input_root, output_root)
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    assert main(["--json", "items", "refresh"]) == 0
+    capsys.readouterr()
+    assert main(["--json", "items", "refresh"]) == 0
+    no_change = json.loads(capsys.readouterr().out)
+    assert no_change["state"] == "skipped_no_changes"
+    assert no_change["run_id"] is None
+    assert no_change["processed_count"] == 0
+    assert no_change["skipped_count"] == 1
+
+    assert main(["--json", "runs", "list"]) == 0
+    runs = json.loads(capsys.readouterr().out)
+    assert runs["count"] == 1
+
+
+def test_serve_once_refreshes_and_exits(tmp_path: Path, monkeypatch, capsys) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    state_root = tmp_path / "state"
+    settings_path = tmp_path / "settings.json"
+    input_root.mkdir()
+    (input_root / "sample.png").write_bytes(minimal_png(8, 6))
+    write_test_settings(settings_path, input_root, output_root)
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    assert main(["--json", "serve", "--once", "--interval-seconds", "1"]) == 0
+    event = json.loads(capsys.readouterr().out)
+    assert event["event"] == "refresh_completed"
+    assert event["processed_count"] == 1
+    assert len(list((output_root / "items").glob("*/image_record.json"))) == 1
+
+    assert main(["--json", "serve", "--once", "--interval-seconds", "1"]) == 0
+    second_event = json.loads(capsys.readouterr().out)
+    assert second_event["event"] == "refresh_skipped_no_changes"
+    assert second_event["run_id"] is None
+    assert second_event["processed_count"] == 0
+    assert second_event["skipped_count"] == 1
+
+
+def test_operation_lock_times_out_when_already_held(tmp_path: Path) -> None:
+    state_root = tmp_path / "state"
+    with exclusive_lock(state_root, "catalog", timeout_seconds=0.1):
+        with pytest.raises(LockTimeoutError):
+            with exclusive_lock(state_root, "catalog", timeout_seconds=0.1, poll_interval_seconds=0.01):
+                pass
+
+
 def test_items_list_paging_and_remove_generated_artifacts_only(tmp_path: Path, monkeypatch, capsys) -> None:
     input_root = tmp_path / "input"
     output_root = tmp_path / "output"
@@ -201,6 +291,37 @@ def test_items_list_paging_and_remove_generated_artifacts_only(tmp_path: Path, m
     assert main(["--json", "items", "list"]) == 0
     empty_payload = json.loads(capsys.readouterr().out)
     assert empty_payload["count"] == 0
+
+
+def test_items_list_uses_current_output_root_and_download_to_destination(tmp_path: Path, monkeypatch, capsys) -> None:
+    input_root = tmp_path / "input"
+    first_output_root = tmp_path / "output-one"
+    second_output_root = tmp_path / "output-two"
+    state_root = tmp_path / "state"
+    settings_path = tmp_path / "settings.json"
+    input_root.mkdir()
+    (input_root / "sample.png").write_bytes(minimal_png(8, 6))
+    write_test_settings(settings_path, input_root, first_output_root)
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT", str(state_root))
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    assert main(["--json", "items", "refresh"]) == 0
+    capsys.readouterr()
+    write_test_settings(settings_path, input_root, second_output_root)
+
+    assert main(["--json", "items", "list"]) == 0
+    stale_list_payload = json.loads(capsys.readouterr().out)
+    assert stale_list_payload["count"] == 0
+
+    assert main(["--json", "items", "refresh"]) == 0
+    capsys.readouterr()
+    target_dir = tmp_path / "handoff"
+    assert main(["--json", "items", "download", "--all", "--to", str(target_dir)]) == 0
+    download_payload = json.loads(capsys.readouterr().out)
+    archive_path = Path(download_payload["archive_path"])
+    assert archive_path == target_dir / "TimelineForImage-selected.zip"
+    assert archive_path.exists()
 
 
 def test_doctor_reports_validation_and_run_show_has_artifacts(tmp_path: Path, monkeypatch, capsys) -> None:

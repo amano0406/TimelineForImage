@@ -16,7 +16,8 @@ $forwardedEnvironmentNames = @(
     "TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT",
     "TIMELINE_FOR_IMAGE_SETTINGS_PATH",
     "TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH",
-    "TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT"
+    "TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT",
+    "TIMELINE_FOR_IMAGE_WORKER_INTERVAL_SECONDS"
 )
 
 function Format-TfiProcessArgument {
@@ -103,6 +104,28 @@ function Invoke-TfiHiddenProcess {
     }
 }
 
+function Get-TfiForwardedEnvironmentArguments {
+    $arguments = @()
+    foreach ($name in $script:forwardedEnvironmentNames) {
+        $value = [System.Environment]::GetEnvironmentVariable($name, "Process")
+        if ($null -ne $value) {
+            $arguments += @("-e", "$name=$value")
+        }
+    }
+    return $arguments
+}
+
+function Test-TfiWorkerRunning {
+    param([string]$Docker)
+
+    $result = Invoke-TfiHiddenProcess -FilePath $Docker -Arguments @("compose", "--project-directory", $repoRoot, "ps", "--status", "running", "--services") -SuppressOutput
+    if ($result.ExitCode -ne 0) {
+        return $false
+    }
+    $services = @($result.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    return $services -contains "worker"
+}
+
 function Get-TfiDockerCommand {
     $dockerExe = Join-Path $env:ProgramFiles "Docker\Docker\resources\bin\docker.exe"
     if (Test-Path -LiteralPath $dockerExe) { return $dockerExe }
@@ -115,18 +138,18 @@ function Get-TfiDockerCommand {
 
 $docker = Get-TfiDockerCommand
 
-$buildResult = Invoke-TfiHiddenProcess -FilePath $docker -Arguments @("compose", "--project-directory", $repoRoot, "build", "worker") -SuppressOutput
-
-if ($buildResult.ExitCode -ne 0) {
-    if ($buildResult.Stderr.Length -gt 0) {
-        [Console]::Error.Write($buildResult.Stderr)
-    }
-    if ($buildResult.Stdout.Length -gt 0) {
-        [Console]::Error.Write($buildResult.Stdout)
-    }
-    throw "Failed to build TimelineForImage worker."
+if (Test-TfiWorkerRunning -Docker $docker) {
+    $execArgs = @("compose", "--project-directory", $repoRoot, "exec", "-T") + (Get-TfiForwardedEnvironmentArguments) + @("worker", "python", "-m", "timeline_for_image_worker") + @($CliArgs)
+    $execResult = Invoke-TfiHiddenProcess -FilePath $docker -Arguments $execArgs -WriteOutput
+    exit $execResult.ExitCode
 }
 
+$buildResult = Invoke-TfiHiddenProcess -FilePath $docker -Arguments @("compose", "--project-directory", $repoRoot, "build", "worker") -SuppressOutput
+if ($buildResult.ExitCode -ne 0) {
+    if ($buildResult.Stderr.Length -gt 0) { [Console]::Error.Write($buildResult.Stderr) }
+    if ($buildResult.Stdout.Length -gt 0) { [Console]::Error.Write($buildResult.Stdout) }
+    throw "Failed to build TimelineForImage worker."
+}
 $runResult = Invoke-TfiHiddenProcess -FilePath $docker -Arguments (@("compose", "--project-directory", $repoRoot, "run", "--rm", "--no-deps", "worker") + @($CliArgs)) -WriteOutput
 
 exit $runResult.ExitCode

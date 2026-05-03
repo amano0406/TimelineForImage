@@ -10,27 +10,48 @@ from .contracts import ImageSource, RunStatus
 from .discovery import discover_images
 from .fs_utils import now_iso, read_json, write_json
 from .image_record import build_image_record, save_debug_overlay, save_normalized_image
+from .locks import exclusive_lock
 from .ocr import run_ocr
 from .settings import Settings, internal_state_root, resolved_input_roots, resolved_output_root
 
 OCR_MODE = "auto"
+REQUIRED_ITEM_FILES = ("convert_info.json", "timeline.json", "image_record.json")
 
 
 def refresh_items(settings: Settings, max_items: int | None = None, reprocess_duplicates: bool = False) -> dict[str, Any]:
     state_root = internal_state_root()
+    with exclusive_lock(state_root, "catalog"):
+        return refresh_items_unlocked(settings, max_items=max_items, reprocess_duplicates=reprocess_duplicates)
+
+
+def refresh_items_unlocked(settings: Settings, max_items: int | None = None, reprocess_duplicates: bool = False) -> dict[str, Any]:
+    state_root = internal_state_root()
     output_root = resolved_output_root(settings)
     state_root.mkdir(parents=True, exist_ok=True)
     output_root.mkdir(parents=True, exist_ok=True)
+
+    sources = discover_images(resolved_input_roots(settings))
+    catalog = load_catalog(state_root)
+    candidates = [item for item in sources if needs_processing(catalog, item, reprocess_duplicates, output_root)]
+    if max_items is not None:
+        candidates = candidates[:max_items]
+    if not candidates:
+        return {
+            "schema_version": 1,
+            "run_id": None,
+            "state": "skipped_no_changes",
+            "source_count": len(sources),
+            "processed_count": 0,
+            "skipped_count": len(sources),
+            "failed_count": 0,
+            "archive_path": None,
+            "items": [],
+        }
+
     run_id = "run-" + now_iso().replace(":", "").replace("+", "Z")
     run_dir = state_root / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     write_status(run_dir, RunStatus(run_id=run_id, state="running", current_stage="discover", started_at=now_iso(), updated_at=now_iso()))
-
-    sources = discover_images(resolved_input_roots(settings))
-    catalog = load_catalog(state_root)
-    candidates = [item for item in sources if needs_processing(catalog, item, reprocess_duplicates)]
-    if max_items is not None:
-        candidates = candidates[:max_items]
     results = []
     failed = 0
     for index, item in enumerate(candidates, start=1):
@@ -159,7 +180,7 @@ def create_download_zip(output_root: Path, item_dirs: list[Path]) -> Path | None
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("README.md", "# TimelineForImage Export\n\nOriginal image files are not included.\n")
         for item_dir in item_dirs:
-            for name in ["convert_info.json", "timeline.json", "image_record.json"]:
+            for name in REQUIRED_ITEM_FILES:
                 archive.write(item_dir / name, f"items/{item_dir.name}/{name}")
     return archive_path
 
@@ -177,10 +198,41 @@ def write_status(run_dir: Path, status: RunStatus) -> None:
 
 def list_items(settings: Settings) -> list[dict[str, Any]]:
     catalog = load_catalog(internal_state_root())
-    return sorted(catalog.get("items", {}).values(), key=lambda row: row.get("relative_path", ""))
+    output_root = resolved_output_root(settings)
+    rows = [
+        row
+        for row in catalog.get("items", {}).values()
+        if isinstance(row, dict) and catalog_row_matches_current_output(row, output_root)
+    ]
+    return sorted(rows, key=lambda row: row.get("relative_path", ""))
+
+
+def catalog_row_matches_current_output(row: dict[str, Any], output_root: Path) -> bool:
+    output_dir = Path(str(row.get("output_dir") or ""))
+    if not is_path_under_root(output_dir, output_root):
+        return False
+    return item_output_complete(output_dir)
+
+
+def item_output_complete(output_dir: Path) -> bool:
+    return output_dir.is_dir() and all((output_dir / name).is_file() for name in REQUIRED_ITEM_FILES)
+
+
+def is_path_under_root(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def remove_items(settings: Settings, item_ids: list[str], dry_run: bool = False) -> dict[str, Any]:
+    state_root = internal_state_root()
+    with exclusive_lock(state_root, "catalog"):
+        return remove_items_unlocked(settings, item_ids, dry_run=dry_run)
+
+
+def remove_items_unlocked(settings: Settings, item_ids: list[str], dry_run: bool = False) -> dict[str, Any]:
     state_root = internal_state_root()
     catalog = load_catalog(state_root)
     records = catalog.get("items", {})

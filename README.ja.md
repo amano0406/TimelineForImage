@@ -135,6 +135,7 @@ Windows では PowerShell が正面玄関です。
 
 ```powershell
 .\start.ps1
+.\stop.ps1
 .\cli.ps1 settings init
 .\cli.ps1 settings status
 .\cli.ps1 files list
@@ -144,12 +145,17 @@ Windows では PowerShell が正面玄関です。
 .\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx --dry-run
 .\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx
 .\cli.ps1 items download --all
+.\cli.ps1 items download --all --to C:\path\handoff --overwrite
 .\cli.ps1 runs list
 .\cli.ps1 runs list --page 1 --page-size 20
 .\cli.ps1 runs show --run-id <RUN_ID>
 .\cli.ps1 models list
 .\cli.ps1 doctor
 ```
+
+`.\start.ps1` は Docker worker を常時起動します。worker は `settings.json` の `inputRoots` を定期的に確認し、新規または変更された画像だけを処理します。
+標準手順では Docker Compose の service 名を指定した直接起動コマンドを使いません。`.\cli.ps1` は worker が常駐中ならそのコンテナ内で実行します。
+処理間隔は Docker 環境変数 `TIMELINE_FOR_IMAGE_WORKER_INTERVAL_SECONDS` で調整できます。既定値は `60` 秒です。
 
 JSON 出力:
 

@@ -9,6 +9,14 @@ if (-not $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT) {
     $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT = "C:\"
 }
 
+$forwardedEnvironmentNames = @(
+    "TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT",
+    "TIMELINE_FOR_IMAGE_SETTINGS_PATH",
+    "TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH",
+    "TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT",
+    "TIMELINE_FOR_IMAGE_WORKER_INTERVAL_SECONDS"
+)
+
 function Format-TfiProcessArgument {
     param([string]$Value)
 
@@ -64,6 +72,12 @@ function Invoke-TfiHiddenProcess {
         $startInfo.EnvironmentVariables["Path"] = $updatedPath
     }
     $startInfo.EnvironmentVariables["PATHEXT"] = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL"
+    foreach ($name in $script:forwardedEnvironmentNames) {
+        $value = [System.Environment]::GetEnvironmentVariable($name, "Process")
+        if ($null -ne $value) {
+            $startInfo.EnvironmentVariables[$name] = $value
+        }
+    }
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
@@ -98,7 +112,7 @@ function Get-TfiDockerCommand {
 
 $docker = Get-TfiDockerCommand
 Write-Host "Starting TimelineForImage worker..."
-$startResult = Invoke-TfiHiddenProcess -FilePath $docker -Arguments @("compose", "--project-directory", $repoRoot, "up", "-d", "--build", "worker") -WriteOutput
+$startResult = Invoke-TfiHiddenProcess -FilePath $docker -Arguments @("compose", "--project-directory", $repoRoot, "up", "-d", "--build") -WriteOutput
 if ($startResult.ExitCode -ne 0) {
     throw "docker compose failed."
 }

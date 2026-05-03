@@ -20,4 +20,4 @@ RUN pip install --no-cache-dir -r /workspace/worker/requirements.txt
 COPY worker/src /workspace/worker/src
 
 ENTRYPOINT ["python", "-m", "timeline_for_image_worker"]
-CMD ["doctor"]
+CMD ["serve"]
