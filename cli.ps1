@@ -12,15 +12,31 @@ if (-not $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT) {
     $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT = "C:\"
 }
 
-$docker = "docker"
-& $docker compose --project-directory $repoRoot up -d --build worker
-if (-not $?) {
-    throw "Failed to start TimelineForImage worker."
+$docker = "docker.exe"
+
+$previousErrorActionPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = "Continue"
+    & $docker compose --project-directory $repoRoot build worker *> $null
+    $buildExitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    $buildExitCode = if ($null -eq $buildExitCodeVariable) { 0 } else { [int]$buildExitCodeVariable.Value }
+}
+finally {
+    $ErrorActionPreference = $previousErrorActionPreference
 }
 
-& $docker compose --project-directory $repoRoot exec -T worker python -m timeline_for_image_worker @CliArgs
-$exitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
-if ($null -eq $exitCodeVariable) {
-    exit 0
+if ($buildExitCode -ne 0) {
+    throw "Failed to build TimelineForImage worker."
 }
-exit $global:LASTEXITCODE
+
+try {
+    $ErrorActionPreference = "Continue"
+    & $docker compose --project-directory $repoRoot run --rm --no-deps worker @CliArgs
+    $runExitCodeVariable = Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+    $runExitCode = if ($null -eq $runExitCodeVariable) { 0 } else { [int]$runExitCodeVariable.Value }
+}
+finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
+
+exit $runExitCode

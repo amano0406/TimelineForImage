@@ -8,8 +8,8 @@ services:
       dockerfile: docker/worker.Dockerfile
     environment:
       TIMELINE_FOR_IMAGE_IN_DOCKER: "1"
-      TIMELINE_FOR_IMAGE_SETTINGS_PATH: /workspace/settings.json
-      TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH: /workspace/settings.example.json
+      TIMELINE_FOR_IMAGE_SETTINGS_PATH: ${TIMELINE_FOR_IMAGE_SETTINGS_PATH:-/workspace/settings.json}
+      TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH: ${TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH:-/workspace/settings.example.json}
       PYTHONPATH: /workspace/worker/src
       TESSDATA_PREFIX: /usr/share/tesseract-ocr/5/tessdata
     volumes:

@@ -9,7 +9,7 @@ if (-not $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT) {
     $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT = "C:\"
 }
 
-$docker = "docker"
+$docker = "docker.exe"
 Write-Host "Starting TimelineForImage worker..."
 & $docker compose --project-directory $repoRoot up -d --build worker
 if (-not $?) {

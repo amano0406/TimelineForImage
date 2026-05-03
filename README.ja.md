@@ -193,3 +193,10 @@ Docker resources:
 cd C:\apps\TimelineForImage
 docker compose run --rm --entrypoint sh worker -c "pip install --no-cache-dir -r /workspace/worker/requirements-dev.txt >/tmp/pip-test.log && PYTHONPATH=/workspace/worker/src python -m pytest /workspace/worker/tests -q"
 ```
+
+`cli.ps1` をローカル入口として実際に呼び出し、`items download --all` の ZIP 生成まで確認する統合テスト:
+
+```powershell
+cd C:\apps\TimelineForImage
+python -m unittest discover -s tests -p test_cli_ps1_download.py
+```
