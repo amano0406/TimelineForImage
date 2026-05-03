@@ -17,6 +17,8 @@ class Settings:
     output_root: str
 
 
+SETTINGS_SCHEMA_VERSION = 1
+SETTINGS_KEYS = ("schemaVersion", "inputRoots", "outputRoot")
 INTERNAL_STATE_ROOT = "/shared/app-data/timeline-for-image-state"
 
 
@@ -45,22 +47,23 @@ def load_settings() -> Settings:
     if not settings_path().exists():
         init_settings()
     payload = read_json(settings_path())
-    required = ["schemaVersion", "inputRoots", "outputRoot"]
-    unknown = sorted(set(payload) - set(required))
+    unknown = sorted(set(payload) - set(SETTINGS_KEYS))
     if unknown:
         raise ValueError(f"settings.json has unsupported keys: {', '.join(unknown)}")
-    missing = [key for key in required if key not in payload]
+    missing = [key for key in SETTINGS_KEYS if key not in payload]
     if missing:
         raise ValueError(f"settings.json is missing required keys: {', '.join(missing)}")
     schema_version = int(payload["schemaVersion"])
-    if schema_version != 1:
+    if schema_version != SETTINGS_SCHEMA_VERSION:
         raise ValueError(f"Unsupported schemaVersion: {schema_version}")
     if not isinstance(payload["inputRoots"], list):
         raise ValueError("inputRoots must be an array.")
+    input_roots = normalize_path_list(payload["inputRoots"], "inputRoots")
+    output_root = normalize_path_string(payload["outputRoot"], "outputRoot")
     return Settings(
         schema_version=schema_version,
-        input_roots=[str(value) for value in payload["inputRoots"]],
-        output_root=str(payload["outputRoot"]),
+        input_roots=input_roots,
+        output_root=output_root,
     )
 
 
@@ -78,10 +81,26 @@ def settings_to_payload(settings: Settings) -> dict[str, Any]:
 
 def default_settings_payload() -> dict[str, Any]:
     return {
-        "schemaVersion": 1,
+        "schemaVersion": SETTINGS_SCHEMA_VERSION,
         "inputRoots": ["C:\\TimelineData\\input-image\\"],
         "outputRoot": "C:\\TimelineData\\image",
     }
+
+
+def normalize_path_list(values: list[Any], key: str) -> list[str]:
+    paths = [normalize_path_string(value, f"{key}[{index}]") for index, value in enumerate(values)]
+    if not paths:
+        raise ValueError(f"{key} must contain at least one path.")
+    return paths
+
+
+def normalize_path_string(value: Any, key: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string.")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError(f"{key} must not be empty.")
+    return normalized
 
 
 def resolve_local_path(value: str) -> Path:

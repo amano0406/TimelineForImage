@@ -5,15 +5,20 @@ import struct
 import zipfile
 from pathlib import Path
 
+import pytest
 from jsonschema import Draft202012Validator
 import timeline_for_image_worker.cli as cli
 from timeline_for_image_worker.cli import main
 from timeline_for_image_worker.discovery import discover_images
+from timeline_for_image_worker.settings import Settings, default_settings_payload, load_settings, settings_to_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IMAGE_RECORD_SCHEMA = json.loads((REPO_ROOT / "schemas" / "image_record.schema.json").read_text(encoding="utf-8"))
 Draft202012Validator.check_schema(IMAGE_RECORD_SCHEMA)
 IMAGE_RECORD_VALIDATOR = Draft202012Validator(IMAGE_RECORD_SCHEMA)
+SETTINGS_SCHEMA = json.loads((REPO_ROOT / "schemas" / "settings.schema.json").read_text(encoding="utf-8"))
+Draft202012Validator.check_schema(SETTINGS_SCHEMA)
+SETTINGS_VALIDATOR = Draft202012Validator(SETTINGS_SCHEMA)
 
 
 def test_discover_png_dimensions(tmp_path: Path) -> None:
@@ -53,6 +58,74 @@ def test_settings_reject_removed_keys(tmp_path: Path, monkeypatch, capsys) -> No
 
     assert main(["doctor"]) == 1
     assert "unsupported keys: removedSetting" in capsys.readouterr().err
+
+
+def test_settings_contract_is_public_three_key_schema() -> None:
+    payload = default_settings_payload()
+    assert set(payload) == {"schemaVersion", "inputRoots", "outputRoot"}
+    SETTINGS_VALIDATOR.validate(payload)
+    SETTINGS_VALIDATOR.validate(
+        settings_to_payload(Settings(schema_version=1, input_roots=["C:\\Images"], output_root="C:\\TimelineData\\image"))
+    )
+
+    removed_keys = [
+        "ocr",
+        "ocr" + "Mode",
+        "state" + "Root",
+        "state" + "Directory",
+        "cache" + "Root",
+        "test" + "Mode",
+    ]
+    for removed_key in removed_keys:
+        invalid_payload = {**payload, removed_key: "legacy"}
+        errors = list(SETTINGS_VALIDATOR.iter_errors(invalid_payload))
+        assert errors, f"{removed_key} must not be accepted by settings.schema.json"
+
+
+def test_settings_reject_invalid_path_values(tmp_path: Path, monkeypatch) -> None:
+    settings_path = tmp_path / "settings.json"
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    invalid_payloads = [
+        (
+            {
+                "schemaVersion": 1,
+                "inputRoots": [],
+                "outputRoot": str(tmp_path / "output"),
+            },
+            "inputRoots must contain at least one path.",
+        ),
+        (
+            {
+                "schemaVersion": 1,
+                "inputRoots": [""],
+                "outputRoot": str(tmp_path / "output"),
+            },
+            "inputRoots[0] must not be empty.",
+        ),
+        (
+            {
+                "schemaVersion": 1,
+                "inputRoots": [str(tmp_path)],
+                "outputRoot": "   ",
+            },
+            "outputRoot must not be empty.",
+        ),
+        (
+            {
+                "schemaVersion": 1,
+                "inputRoots": [str(tmp_path)],
+                "outputRoot": None,
+            },
+            "outputRoot must be a string.",
+        ),
+    ]
+
+    for payload, message in invalid_payloads:
+        settings_path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ValueError) as exc_info:
+            load_settings()
+        assert message in str(exc_info.value)
 
 
 def test_refresh_creates_master_item_artifacts(tmp_path: Path, monkeypatch) -> None:

@@ -12,6 +12,13 @@ if (-not $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT) {
     $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT = "C:\"
 }
 
+$forwardedEnvironmentNames = @(
+    "TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT",
+    "TIMELINE_FOR_IMAGE_SETTINGS_PATH",
+    "TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH",
+    "TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT"
+)
+
 function Format-TfiProcessArgument {
     param([string]$Value)
 
@@ -68,6 +75,12 @@ function Invoke-TfiHiddenProcess {
         $startInfo.EnvironmentVariables["Path"] = $updatedPath
     }
     $startInfo.EnvironmentVariables["PATHEXT"] = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL"
+    foreach ($name in $script:forwardedEnvironmentNames) {
+        $value = [System.Environment]::GetEnvironmentVariable($name, "Process")
+        if ($null -ne $value) {
+            $startInfo.EnvironmentVariables[$name] = $value
+        }
+    }
 
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo

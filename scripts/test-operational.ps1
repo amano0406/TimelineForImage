@@ -129,6 +129,18 @@ function Assert-Tfi {
     }
 }
 
+function Assert-TfiRepoSettingsUnchanged {
+    if ($script:repoSettingsHadOriginal) {
+        Assert-Tfi (Test-Path -LiteralPath $script:repoSettingsPath) "Repo settings.json was removed during operational test."
+        $current = [System.IO.File]::ReadAllBytes($script:repoSettingsPath)
+        Assert-Tfi (
+            [Convert]::ToBase64String($current) -eq [Convert]::ToBase64String($script:repoSettingsOriginalBytes)
+        ) "Repo settings.json was modified during operational test."
+        return
+    }
+    Assert-Tfi (-not (Test-Path -LiteralPath $script:repoSettingsPath)) "Repo settings.json was created during operational test."
+}
+
 function Invoke-TfiCli {
     param([string[]]$Arguments)
 
@@ -161,6 +173,9 @@ $inputRoot = Join-Path $workRootFull "input"
 $outputRoot = Join-Path $workRootFull "records"
 $stateRoot = Join-Path $workRootFull "state"
 $settingsPath = Join-Path $workRootFull "settings.json"
+$repoSettingsPath = Join-Path $repoRoot "settings.json"
+$repoSettingsHadOriginal = Test-Path -LiteralPath $repoSettingsPath
+$repoSettingsOriginalBytes = if ($repoSettingsHadOriginal) { [System.IO.File]::ReadAllBytes($repoSettingsPath) } else { [byte[]]@() }
 
 $testEnvironment = @{
     "TIMELINE_FOR_IMAGE_SETTINGS_PATH" = (ConvertTo-TfiWorkspacePath -WindowsPath $settingsPath)
@@ -180,6 +195,7 @@ try {
 
     Invoke-TfiCli -Arguments @("settings", "save", "--input-root", $inputRoot, "--output-root", $outputRoot) | Out-Null
     Assert-Tfi (Test-Path -LiteralPath $settingsPath) "Test settings.json was not created."
+    Assert-TfiRepoSettingsUnchanged
 
     $doctor = Invoke-TfiCliJson -Arguments @("doctor")
     Assert-Tfi ([bool]$doctor.ok) "doctor did not report ok."
@@ -239,6 +255,7 @@ try {
 
     $afterRemove = Invoke-TfiCliJson -Arguments @("items", "list")
     Assert-Tfi ($afterRemove.count -eq 1) "items list count after remove was not 1."
+    Assert-TfiRepoSettingsUnchanged
 
     $success = $true
     Write-Host "Operational test passed."

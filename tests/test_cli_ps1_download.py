@@ -14,6 +14,8 @@ TEST_ROOT = REPO_ROOT / "output" / "cli-ps1-download-test"
 INPUT_ROOT = TEST_ROOT / "input"
 RECORDS_ROOT = TEST_ROOT / "records"
 STATE_ROOT = TEST_ROOT / "state"
+SETTINGS_PATH = TEST_ROOT / "settings.json"
+RUNNER_PATH = TEST_ROOT / "invoke-cli.ps1"
 REPO_SETTINGS_PATH = REPO_ROOT / "settings.json"
 
 
@@ -40,7 +42,11 @@ class CliPs1DownloadTest(unittest.TestCase):
                 "--output-root",
                 to_windows_path(RECORDS_ROOT),
             )
-            self.assertTrue(REPO_SETTINGS_PATH.exists())
+            self.assertTrue(SETTINGS_PATH.exists())
+            if original_settings is None:
+                self.assertFalse(REPO_SETTINGS_PATH.exists())
+            else:
+                self.assertEqual(REPO_SETTINGS_PATH.read_bytes(), original_settings)
             run_cli_ps1(powershell, "--json", "items", "refresh", "--max-items", "1")
             image_records = sorted((RECORDS_ROOT / "items").glob("*/image_record.json"))
             self.assertEqual(len(image_records), 1)
@@ -58,6 +64,7 @@ class CliPs1DownloadTest(unittest.TestCase):
             self.assertTrue(any(name.endswith("/image_record.json") for name in names))
             self.assertFalse(any(name.endswith("sample.png") for name in names))
         finally:
+            shutil.rmtree(TEST_ROOT, ignore_errors=True)
             if original_settings is None:
                 REPO_SETTINGS_PATH.unlink(missing_ok=True)
             else:
@@ -65,9 +72,8 @@ class CliPs1DownloadTest(unittest.TestCase):
 
 
 def run_cli_ps1(powershell: list[str], *args: str) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env.setdefault("TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT", "C:\\")
-    env["TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT"] = "/workspace/output/cli-ps1-download-test/state"
+    TEST_ROOT.mkdir(parents=True, exist_ok=True)
+    write_cli_runner()
     completed = subprocess.run(
         [
             *powershell,
@@ -75,11 +81,11 @@ def run_cli_ps1(powershell: list[str], *args: str) -> subprocess.CompletedProces
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            to_windows_path(REPO_ROOT / "cli.ps1"),
+            to_windows_path(RUNNER_PATH),
             *args,
         ],
         cwd=REPO_ROOT,
-        env=env,
+        env=os.environ.copy(),
         text=True,
         capture_output=True,
         timeout=180,
@@ -87,6 +93,33 @@ def run_cli_ps1(powershell: list[str], *args: str) -> subprocess.CompletedProces
     )
     assert completed.returncode == 0, f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     return completed
+
+
+def write_cli_runner() -> None:
+    cli_path = escape_powershell_single_quoted(to_windows_path(REPO_ROOT / "cli.ps1"))
+    RUNNER_PATH.write_text(
+        "\n".join(
+            [
+                "[CmdletBinding()]",
+                "param(",
+                "    [Parameter(ValueFromRemainingArguments = $true)]",
+                "    [string[]]$CliArgs",
+                ")",
+                "$ErrorActionPreference = \"Stop\"",
+                "$env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT = \"C:\\\"",
+                "$env:TIMELINE_FOR_IMAGE_SETTINGS_PATH = \"/workspace/output/cli-ps1-download-test/settings.json\"",
+                "$env:TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT = \"/workspace/output/cli-ps1-download-test/state\"",
+                f"& '{cli_path}' @CliArgs",
+                "exit $LASTEXITCODE",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def escape_powershell_single_quoted(value: str) -> str:
+    return value.replace("'", "''")
 
 
 def find_powershell_command() -> list[str] | None:

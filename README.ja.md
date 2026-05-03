@@ -51,7 +51,24 @@ C:\apps\TimelineForImage\settings.example.json
 }
 ```
 
+設定スキーマ:
+
+```text
+C:\apps\TimelineForImage\schemas\settings.schema.json
+```
+
+設定項目:
+
+| key | 必須 | 内容 |
+| --- | --- | --- |
+| `schemaVersion` | yes | 設定ファイルの形式バージョン。現在は `1` 固定。 |
+| `inputRoots` | yes | 画像を探す入力ディレクトリ配列。1件以上の非空文字列。 |
+| `outputRoot` | yes | `image_record.json`、`timeline.json`、download ZIP などを出す出力ディレクトリ。非空文字列。 |
+
+この3項目以外の key はエラーにします。古い互換用の key や、運用者が編集すべきでない内部設定を `settings.json` に残しません。
+
 OCRはローカルTesseractで内部実行します。状態データは Docker の `app-data` ボリューム内に保存し、設定項目としては持ちません。
+テスト時も `settings.json` にテスト用フラグを追加せず、テスト専用の一時 settings path と一時 state path を使います。
 
 ## Output Contract
 
