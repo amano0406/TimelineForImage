@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  worker-tests:
+    runs-on: ubuntu-latest
+    env:
+      TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT: /tmp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build worker image
+        run: docker compose build worker
+
+      - name: Run worker tests
+        run: >
+          docker compose run --rm --entrypoint sh worker -c
+          "pip install --no-cache-dir -r /workspace/worker/requirements-dev.txt
+          >/tmp/pip-test.log
+          && PYTHONPATH=/workspace/worker/src
+          python -m pytest /workspace/worker/tests -q"

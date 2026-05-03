@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/amano0406/TimelineForImage/schemas/image_record.schema.json",
+  "title": "TimelineForImage image_record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "record_id",
+    "asset",
+    "timeline",
+    "image",
+    "processing",
+    "quality",
+    "classification",
+    "text",
+    "visual",
+    "layout",
+    "search",
+    "review"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "timeline_for_image.image_record.v1"
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^image-[0-9a-f]{16}$"
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_path", "relative_path", "media_type", "sha256", "size_bytes", "format_name"],
+      "properties": {
+        "source_path": { "type": "string" },
+        "relative_path": { "type": "string" },
+        "media_type": { "const": "image" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "format_name": { "type": "string" }
+      }
+    },
+    "timeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timeline_at", "captured_at", "modified_at"],
+      "properties": {
+        "timeline_at": { "type": ["string", "null"] },
+        "captured_at": { "type": ["string", "null"] },
+        "modified_at": { "type": ["string", "null"] }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "orientation", "camera"],
+      "properties": {
+        "width": { "type": ["integer", "null"], "minimum": 0 },
+        "height": { "type": ["integer", "null"], "minimum": 0 },
+        "orientation": { "enum": ["landscape", "portrait", "square", "unknown"] },
+        "camera": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["make", "model"],
+          "properties": {
+            "make": { "type": ["string", "null"] },
+            "model": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "generated_at", "context_policy", "source_image_modified"],
+      "properties": {
+        "profile": { "const": "timeline_for_image_local_v1" },
+        "generated_at": { "type": "string" },
+        "context_policy": { "const": "single_image_only" },
+        "source_image_modified": { "const": false }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["brightness", "contrast", "warnings"],
+      "properties": {
+        "brightness": { "type": ["number", "null"] },
+        "contrast": { "type": ["number", "null"] },
+        "brightness_level": { "type": "string" },
+        "contrast_level": { "type": "string" },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image_kind", "content_types"],
+      "properties": {
+        "image_kind": { "type": "string" },
+        "content_types": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["has_text", "full_text", "blocks"],
+      "properties": {
+        "has_text": { "type": "boolean" },
+        "full_text": { "type": "string" },
+        "blocks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/textBlock" }
+        }
+      }
+    },
+    "visual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caption", "scene_summary", "observations"],
+      "properties": {
+        "caption": { "type": "string" },
+        "scene_summary": { "type": "string" },
+        "observations": { "type": "array" }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinate_system", "color_palette", "grid", "text_regions", "spatial_relations"],
+      "properties": {
+        "coordinate_system": { "const": "normalized_xyxy" },
+        "color_palette": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/colorPaletteEntry" }
+        },
+        "grid": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gridCell" }
+        },
+        "text_regions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/textRegion" }
+        },
+        "spatial_relations": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    },
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keywords"],
+      "properties": {
+        "keywords": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["needs_review", "warnings"],
+      "properties": {
+        "needs_review": { "type": "boolean" },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "bboxNorm": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 }
+      ],
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "rgb": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "integer", "minimum": 0, "maximum": 255 },
+        { "type": "integer", "minimum": 0, "maximum": 255 },
+        { "type": "integer", "minimum": 0, "maximum": 255 }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "color": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hex", "rgb"],
+      "properties": {
+        "hex": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "rgb": { "$ref": "#/$defs/rgb" }
+      }
+    },
+    "colorPaletteEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hex", "rgb", "ratio"],
+      "properties": {
+        "hex": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "rgb": { "$ref": "#/$defs/rgb" },
+        "ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "gridCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cell_id", "row", "col", "bbox_norm", "average_color"],
+      "properties": {
+        "cell_id": { "type": "string" },
+        "row": { "type": "integer", "minimum": 0 },
+        "col": { "type": "integer", "minimum": 0 },
+        "bbox_norm": { "$ref": "#/$defs/bboxNorm" },
+        "average_color": { "$ref": "#/$defs/color" }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "level"],
+      "properties": {
+        "score": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "level": { "type": "string" }
+      }
+    },
+    "textBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block_id", "text", "normalized_text", "role", "bbox_norm", "confidence", "evidence"],
+      "properties": {
+        "block_id": { "type": "string" },
+        "text": { "type": "string" },
+        "normalized_text": { "type": "string" },
+        "role": { "type": "string" },
+        "bbox_norm": { "$ref": "#/$defs/bboxNorm" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["channel", "stage"],
+          "properties": {
+            "channel": { "type": "string" },
+            "stage": { "type": "string" }
+          }
+        }
+      }
+    },
+    "textRegion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block_id", "text", "bbox_norm", "z_index"],
+      "properties": {
+        "block_id": { "type": "string" },
+        "text": { "type": "string" },
+        "bbox_norm": { "$ref": "#/$defs/bboxNorm" },
+        "z_index": { "type": "integer" }
+      }
+    }
+  }
+}

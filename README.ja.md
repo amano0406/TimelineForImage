@@ -78,6 +78,7 @@ Master output:
 ```
 
 `image_record.json` が画像ごとの主成果物です。
+スキーマは `schemas\image_record.schema.json` で固定しています。
 
 ```json
 {

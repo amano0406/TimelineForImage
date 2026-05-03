@@ -5,9 +5,15 @@ import struct
 import zipfile
 from pathlib import Path
 
+from jsonschema import Draft202012Validator
 import timeline_for_image_worker.cli as cli
 from timeline_for_image_worker.cli import main
 from timeline_for_image_worker.discovery import discover_images
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+IMAGE_RECORD_SCHEMA = json.loads((REPO_ROOT / "schemas" / "image_record.schema.json").read_text(encoding="utf-8"))
+Draft202012Validator.check_schema(IMAGE_RECORD_SCHEMA)
+IMAGE_RECORD_VALIDATOR = Draft202012Validator(IMAGE_RECORD_SCHEMA)
 
 
 def test_discover_png_dimensions(tmp_path: Path) -> None:
@@ -75,6 +81,7 @@ def test_refresh_creates_master_item_artifacts(tmp_path: Path, monkeypatch) -> N
     assert (item_dir / "artifacts" / "normalized_image.jpg").exists()
     assert (item_dir / "artifacts" / "debug_overlay.jpg").exists()
     record = json.loads((item_dir / "image_record.json").read_text(encoding="utf-8"))
+    IMAGE_RECORD_VALIDATOR.validate(record)
     assert record["text"]["has_text"] is True
     assert record["layout"]["color_palette"]
     assert record["layout"]["grid"]
