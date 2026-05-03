@@ -104,7 +104,6 @@ def process_image(item: ImageSource, output_root: Path, ocr_mode: str) -> Path:
         "pipeline": {
             "version": "timeline-for-image-local-v1",
             "ocr_mode": ocr_mode,
-            "privacy_filter": "none",
             "source_image_modified": False,
         },
         "outputs": {

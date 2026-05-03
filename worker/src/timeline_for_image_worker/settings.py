@@ -16,9 +16,7 @@ class Settings:
     input_roots: list[str]
     output_root: str
     appdata_root: str
-    compute_mode: str
     ocr_mode: str
-    privacy_filter: str
 
 
 def settings_path() -> Path:
@@ -46,14 +44,24 @@ def load_settings() -> Settings:
     if not settings_path().exists():
         init_settings()
     payload = read_json(settings_path())
+    required = ["schemaVersion", "inputRoots", "outputRoot", "appdataRoot", "ocrMode"]
+    unknown = sorted(set(payload) - set(required))
+    if unknown:
+        raise ValueError(f"settings.json has unsupported keys: {', '.join(unknown)}")
+    missing = [key for key in required if key not in payload]
+    if missing:
+        raise ValueError(f"settings.json is missing required keys: {', '.join(missing)}")
+    schema_version = int(payload["schemaVersion"])
+    if schema_version != 1:
+        raise ValueError(f"Unsupported schemaVersion: {schema_version}")
+    if not isinstance(payload["inputRoots"], list):
+        raise ValueError("inputRoots must be an array.")
     return Settings(
-        schema_version=int(payload.get("schemaVersion") or payload.get("schema_version") or 1),
-        input_roots=[str(value) for value in payload.get("inputRoots", [])],
-        output_root=str(payload.get("outputRoot") or "C:\\TimelineData\\image"),
-        appdata_root=str(payload.get("appdataRoot") or "C:\\TimelineData\\image\\.timeline-for-image-state"),
-        compute_mode=str(payload.get("computeMode") or "cpu"),
-        ocr_mode=str(payload.get("ocrMode") or "auto"),
-        privacy_filter=str(payload.get("privacyFilter") or "none"),
+        schema_version=schema_version,
+        input_roots=[str(value) for value in payload["inputRoots"]],
+        output_root=str(payload["outputRoot"]),
+        appdata_root=str(payload["appdataRoot"]),
+        ocr_mode=str(payload["ocrMode"]),
     )
 
 
@@ -67,9 +75,7 @@ def settings_to_payload(settings: Settings) -> dict[str, Any]:
         "inputRoots": settings.input_roots,
         "outputRoot": settings.output_root,
         "appdataRoot": settings.appdata_root,
-        "computeMode": settings.compute_mode,
         "ocrMode": settings.ocr_mode,
-        "privacyFilter": settings.privacy_filter,
     }
 
 
@@ -79,9 +85,7 @@ def default_settings_payload() -> dict[str, Any]:
         "inputRoots": ["C:\\TimelineData\\input-image\\"],
         "outputRoot": "C:\\TimelineData\\image",
         "appdataRoot": "C:\\TimelineData\\image\\.timeline-for-image-state",
-        "computeMode": "cpu",
         "ocrMode": "auto",
-        "privacyFilter": "none",
     }
 
 

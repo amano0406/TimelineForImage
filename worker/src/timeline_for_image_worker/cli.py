@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
 import zipfile
 from pathlib import Path
@@ -37,8 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     settings_save.add_argument("--input-root", action="append")
     settings_save.add_argument("--output-root")
     settings_save.add_argument("--appdata-root")
-    settings_save.add_argument("--compute-mode", choices=("cpu", "gpu"))
-    settings_save.add_argument("--ocr-mode", choices=("off", "auto", "always", "mock"))
+    settings_save.add_argument("--ocr-mode", choices=("off", "auto", "mock"))
 
     files_parser = sub.add_parser("files")
     files_sub = files_parser.add_subparsers(dest="files_command", required=True)
@@ -98,11 +96,9 @@ def main(argv: list[str] | None = None) -> int:
 def enforce_docker_first() -> None:
     if os.environ.get("TIMELINE_FOR_IMAGE_IN_DOCKER") == "1":
         return
-    if os.environ.get("TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI") == "1":
-        return
     if is_in_docker():
         return
-    raise ValueError("Host CLI execution is disabled. Use .\\cli.ps1, or set TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI=1 only for tests.")
+    raise ValueError("Host CLI execution is disabled. Use .\\cli.ps1.")
 
 
 def is_in_docker() -> bool:
@@ -137,9 +133,7 @@ def handle_settings(args: argparse.Namespace) -> int:
             input_roots=args.input_root or current.input_roots,
             output_root=args.output_root or current.output_root,
             appdata_root=args.appdata_root or current.appdata_root,
-            compute_mode=args.compute_mode or current.compute_mode,
             ocr_mode=args.ocr_mode or current.ocr_mode,
-            privacy_filter="none",
         )
         save_settings(updated)
         return emit(args, {"settings": updated.__dict__}, "settings saved")
@@ -220,7 +214,6 @@ def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
         "output_root": output_check,
         "appdata_root": appdata_check,
         "ocr": ocr_check,
-        "privacy_filter": settings.privacy_filter,
         "validation": validation,
         "ok": validation["ok"],
     }
@@ -233,7 +226,6 @@ def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
         f"output: {payload['output_root']['path']} writable={payload['output_root']['writable']}",
         f"appdata: {payload['appdata_root']['path']} writable={payload['appdata_root']['writable']}",
         f"ocr: mode={payload['ocr']['mode']} ready={payload['ocr']['ready']}",
-        f"privacy_filter: {payload['privacy_filter']}",
         f"ok: {payload['ok']}",
     ]
     if validation["errors"]:
@@ -309,9 +301,7 @@ def validate_settings(
         errors.append(f"Output root is not writable: {output_check['path']}")
     if not appdata_check["writable"]:
         errors.append(f"Appdata root is not writable: {appdata_check['path']}")
-    if settings.privacy_filter != "none":
-        errors.append("privacyFilter must be 'none' in the local-only product profile.")
-    if settings.ocr_mode not in {"off", "auto", "always", "mock"}:
+    if settings.ocr_mode not in {"off", "auto", "mock"}:
         errors.append(f"Unsupported ocrMode: {settings.ocr_mode}")
     if not ocr_check["ready"]:
         warnings.append(f"OCR backend is not ready for mode={settings.ocr_mode}.")
@@ -371,7 +361,6 @@ def format_settings_status(payload: dict[str, Any]) -> str:
             f"output_root: {settings['output_root']}",
             f"appdata_root: {settings['appdata_root']}",
             f"ocr_mode: {settings['ocr_mode']}",
-            f"privacy_filter: {settings['privacy_filter']}",
             f"resolved_output_root: {resolved['output_root']}",
         ]
     )

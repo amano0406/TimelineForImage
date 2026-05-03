@@ -42,7 +42,6 @@ def build_image_record(item: ImageSource, ocr: dict[str, Any]) -> dict[str, Any]
             "profile": "timeline_for_image_local_v1",
             "generated_at": now_iso(),
             "context_policy": "single_image_only",
-            "privacy_filter": "none",
             "source_image_modified": False,
         },
         "quality": features["quality"],

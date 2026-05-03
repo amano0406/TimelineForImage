@@ -49,11 +49,11 @@ C:\apps\TimelineForImage\settings.example.json
   ],
   "outputRoot": "C:\\TimelineData\\image",
   "appdataRoot": "C:\\TimelineData\\image\\.timeline-for-image-state",
-  "computeMode": "cpu",
-  "ocrMode": "auto",
-  "privacyFilter": "none"
+  "ocrMode": "auto"
 }
 ```
+
+`ocrMode` は `auto`、`mock`、`off` のいずれかです。OCR文字列の削除・マスクは行わない固定仕様で、設定項目としては持ちません。
 
 ## Output Contract
 
@@ -87,7 +87,6 @@ Master output:
   "timeline": {},
   "image": {},
   "processing": {
-    "privacy_filter": "none",
     "source_image_modified": false
   },
   "quality": {},
@@ -188,9 +187,9 @@ Docker resources:
 
 ## Testing
 
-ホスト直実行は通常禁止です。テスト時のみ `TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI=1` を使います。
+テストも Docker worker 内で実行します。
 
-```bash
-cd /mnt/c/apps/TimelineForImage
-TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI=1 PYTHONPATH=worker/src python3 -m pytest worker/tests
+```powershell
+cd C:\apps\TimelineForImage
+docker compose run --rm --entrypoint sh worker -c "pip install --no-cache-dir -r /workspace/worker/requirements-dev.txt >/tmp/pip-test.log && PYTHONPATH=/workspace/worker/src python -m pytest /workspace/worker/tests -q"
 ```

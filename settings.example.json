@@ -5,7 +5,5 @@
   ],
   "outputRoot": "C:\\TimelineData\\image",
   "appdataRoot": "C:\\TimelineData\\image\\.timeline-for-image-state",
-  "computeMode": "cpu",
-  "ocrMode": "auto",
-  "privacyFilter": "none"
+  "ocrMode": "auto"
 }

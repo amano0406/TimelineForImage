@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import struct
 import zipfile
 from pathlib import Path
@@ -23,12 +22,33 @@ def test_discover_png_dimensions(tmp_path: Path) -> None:
     assert items[0].format_name == "PNG"
 
 
-def test_host_cli_is_blocked_without_allow(monkeypatch, capsys) -> None:
-    monkeypatch.delenv("TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI", raising=False)
+def test_host_cli_is_blocked_outside_docker(monkeypatch, capsys) -> None:
     monkeypatch.delenv("TIMELINE_FOR_IMAGE_IN_DOCKER", raising=False)
     monkeypatch.setattr(cli, "is_in_docker", lambda: False)
     assert main(["doctor"]) == 1
     assert "Host CLI execution is disabled" in capsys.readouterr().err
+
+
+def test_settings_reject_removed_keys(tmp_path: Path, monkeypatch, capsys) -> None:
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "inputRoots": [str(tmp_path)],
+                "outputRoot": str(tmp_path / "output"),
+                "appdataRoot": str(tmp_path / "appdata"),
+                "ocrMode": "mock",
+                "removedSetting": "value",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    assert main(["doctor"]) == 1
+    assert "unsupported keys: removedSetting" in capsys.readouterr().err
 
 
 def test_refresh_creates_master_item_artifacts(tmp_path: Path, monkeypatch) -> None:
@@ -38,21 +58,8 @@ def test_refresh_creates_master_item_artifacts(tmp_path: Path, monkeypatch) -> N
     settings_path = tmp_path / "settings.json"
     input_root.mkdir()
     (input_root / "sample.png").write_bytes(minimal_png(8, 6))
-    settings_path.write_text(
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "inputRoots": [str(input_root)],
-                "outputRoot": str(output_root),
-                "appdataRoot": str(appdata_root),
-                "computeMode": "cpu",
-                "ocrMode": "mock",
-                "privacyFilter": "none",
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI", "1")
+    write_test_settings(settings_path, input_root, output_root, appdata_root, ocr_mode="mock")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
     monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
 
     assert main(["--json", "items", "refresh"]) == 0
@@ -68,7 +75,6 @@ def test_refresh_creates_master_item_artifacts(tmp_path: Path, monkeypatch) -> N
     assert (item_dir / "artifacts" / "normalized_image.jpg").exists()
     assert (item_dir / "artifacts" / "debug_overlay.jpg").exists()
     record = json.loads((item_dir / "image_record.json").read_text(encoding="utf-8"))
-    assert record["processing"]["privacy_filter"] == "none"
     assert record["text"]["has_text"] is True
     assert record["layout"]["color_palette"]
     assert record["layout"]["grid"]
@@ -86,21 +92,8 @@ def test_items_list_paging_and_remove_generated_artifacts_only(tmp_path: Path, m
     input_root.mkdir()
     source = input_root / "sample.png"
     source.write_bytes(minimal_png(8, 6))
-    settings_path.write_text(
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "inputRoots": [str(input_root)],
-                "outputRoot": str(output_root),
-                "appdataRoot": str(appdata_root),
-                "computeMode": "cpu",
-                "ocrMode": "mock",
-                "privacyFilter": "none",
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI", "1")
+    write_test_settings(settings_path, input_root, output_root, appdata_root, ocr_mode="mock")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
     monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
 
     assert main(["--json", "items", "refresh"]) == 0
@@ -138,21 +131,8 @@ def test_doctor_reports_validation_and_run_show_has_artifacts(tmp_path: Path, mo
     settings_path = tmp_path / "settings.json"
     input_root.mkdir()
     (input_root / "sample.png").write_bytes(minimal_png(8, 6))
-    settings_path.write_text(
-        json.dumps(
-            {
-                "schemaVersion": 1,
-                "inputRoots": [str(input_root)],
-                "outputRoot": str(output_root),
-                "appdataRoot": str(appdata_root),
-                "computeMode": "cpu",
-                "ocrMode": "mock",
-                "privacyFilter": "none",
-            }
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setenv("TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI", "1")
+    write_test_settings(settings_path, input_root, output_root, appdata_root, ocr_mode="mock")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_IN_DOCKER", "1")
     monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
 
     assert main(["--json", "doctor"]) == 0
@@ -169,6 +149,28 @@ def test_doctor_reports_validation_and_run_show_has_artifacts(tmp_path: Path, mo
     assert show_payload["result"]["processed_count"] == 1
     assert show_payload["items"][0]["artifacts"]["output_dir_exists"] is True
     assert show_payload["items"][0]["artifacts"]["image_record"].endswith("image_record.json")
+
+
+def write_test_settings(
+    settings_path: Path,
+    input_root: Path,
+    output_root: Path,
+    appdata_root: Path,
+    *,
+    ocr_mode: str,
+) -> None:
+    settings_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "inputRoots": [str(input_root)],
+                "outputRoot": str(output_root),
+                "appdataRoot": str(appdata_root),
+                "ocrMode": ocr_mode,
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def minimal_png(width: int, height: int) -> bytes:
