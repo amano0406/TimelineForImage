@@ -39,10 +39,6 @@ class CliPs1DownloadTest(unittest.TestCase):
                 to_windows_path(INPUT_ROOT),
                 "--output-root",
                 to_windows_path(RECORDS_ROOT),
-                "--appdata-root",
-                to_windows_path(STATE_ROOT),
-                "--ocr-mode",
-                "mock",
             )
             self.assertTrue(REPO_SETTINGS_PATH.exists())
             run_cli_ps1(powershell, "--json", "items", "refresh", "--max-items", "1")
@@ -71,6 +67,7 @@ class CliPs1DownloadTest(unittest.TestCase):
 def run_cli_ps1(powershell: list[str], *args: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.setdefault("TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT", "C:\\")
+    env["TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT"] = "/workspace/output/cli-ps1-download-test/state"
     completed = subprocess.run(
         [
             *powershell,

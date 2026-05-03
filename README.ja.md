@@ -47,13 +47,11 @@ C:\apps\TimelineForImage\settings.example.json
   "inputRoots": [
     "C:\\TimelineData\\input-image\\"
   ],
-  "outputRoot": "C:\\TimelineData\\image",
-  "appdataRoot": "C:\\TimelineData\\image\\.timeline-for-image-state",
-  "ocrMode": "auto"
+  "outputRoot": "C:\\TimelineData\\image"
 }
 ```
 
-`ocrMode` は `auto`、`mock`、`off` のいずれかです。OCR文字列の削除・マスクは行わない固定仕様で、設定項目としては持ちません。
+OCRはローカルTesseractで内部実行します。状態データは Docker の `app-data` ボリューム内に保存し、設定項目としては持ちません。
 
 ## Output Contract
 
@@ -147,9 +145,7 @@ JSON 出力:
 ```powershell
 .\cli.ps1 settings save `
   --input-root C:\apps\image_memory_record_demo\examples\sample_images `
-  --output-root C:\TimelineData\image `
-  --appdata-root C:\TimelineData\image\.timeline-for-image-state `
-  --ocr-mode auto
+  --output-root C:\TimelineData\image
 
 .\cli.ps1 items refresh --max-items 4
 ```

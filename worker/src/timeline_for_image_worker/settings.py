@@ -15,8 +15,9 @@ class Settings:
     schema_version: int
     input_roots: list[str]
     output_root: str
-    appdata_root: str
-    ocr_mode: str
+
+
+INTERNAL_STATE_ROOT = "/shared/app-data/timeline-for-image-state"
 
 
 def settings_path() -> Path:
@@ -44,7 +45,7 @@ def load_settings() -> Settings:
     if not settings_path().exists():
         init_settings()
     payload = read_json(settings_path())
-    required = ["schemaVersion", "inputRoots", "outputRoot", "appdataRoot", "ocrMode"]
+    required = ["schemaVersion", "inputRoots", "outputRoot"]
     unknown = sorted(set(payload) - set(required))
     if unknown:
         raise ValueError(f"settings.json has unsupported keys: {', '.join(unknown)}")
@@ -60,8 +61,6 @@ def load_settings() -> Settings:
         schema_version=schema_version,
         input_roots=[str(value) for value in payload["inputRoots"]],
         output_root=str(payload["outputRoot"]),
-        appdata_root=str(payload["appdataRoot"]),
-        ocr_mode=str(payload["ocrMode"]),
     )
 
 
@@ -74,8 +73,6 @@ def settings_to_payload(settings: Settings) -> dict[str, Any]:
         "schemaVersion": settings.schema_version,
         "inputRoots": settings.input_roots,
         "outputRoot": settings.output_root,
-        "appdataRoot": settings.appdata_root,
-        "ocrMode": settings.ocr_mode,
     }
 
 
@@ -84,8 +81,6 @@ def default_settings_payload() -> dict[str, Any]:
         "schemaVersion": 1,
         "inputRoots": ["C:\\TimelineData\\input-image\\"],
         "outputRoot": "C:\\TimelineData\\image",
-        "appdataRoot": "C:\\TimelineData\\image\\.timeline-for-image-state",
-        "ocrMode": "auto",
     }
 
 
@@ -107,5 +102,5 @@ def resolved_output_root(settings: Settings) -> Path:
     return resolve_local_path(settings.output_root).resolve()
 
 
-def resolved_appdata_root(settings: Settings) -> Path:
-    return resolve_local_path(settings.appdata_root).resolve()
+def internal_state_root() -> Path:
+    return Path(os.environ.get("TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT", INTERNAL_STATE_ROOT)).expanduser().resolve()

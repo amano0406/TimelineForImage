@@ -3,7 +3,5 @@
   "inputRoots": [
     "C:\\TimelineData\\input-image\\"
   ],
-  "outputRoot": "C:\\TimelineData\\image",
-  "appdataRoot": "C:\\TimelineData\\image\\.timeline-for-image-state",
-  "ocrMode": "auto"
+  "outputRoot": "C:\\TimelineData\\image"
 }

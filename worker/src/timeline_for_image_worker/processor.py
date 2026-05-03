@@ -11,22 +11,24 @@ from .discovery import discover_images
 from .fs_utils import now_iso, read_json, write_json
 from .image_record import build_image_record, save_debug_overlay, save_normalized_image
 from .ocr import run_ocr
-from .settings import Settings, resolved_appdata_root, resolved_input_roots, resolved_output_root
+from .settings import Settings, internal_state_root, resolved_input_roots, resolved_output_root
+
+OCR_MODE = "auto"
 
 
 def refresh_items(settings: Settings, max_items: int | None = None, reprocess_duplicates: bool = False) -> dict[str, Any]:
-    appdata_root = resolved_appdata_root(settings)
+    state_root = internal_state_root()
     output_root = resolved_output_root(settings)
-    appdata_root.mkdir(parents=True, exist_ok=True)
+    state_root.mkdir(parents=True, exist_ok=True)
     output_root.mkdir(parents=True, exist_ok=True)
     run_id = "run-" + now_iso().replace(":", "").replace("+", "Z")
-    run_dir = appdata_root / "runs" / run_id
+    run_dir = state_root / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     write_status(run_dir, RunStatus(run_id=run_id, state="running", current_stage="discover", started_at=now_iso(), updated_at=now_iso()))
 
     sources = discover_images(resolved_input_roots(settings))
-    catalog = load_catalog(appdata_root)
-    candidates = [item for item in sources if needs_processing(catalog, item, settings.ocr_mode, reprocess_duplicates)]
+    catalog = load_catalog(state_root)
+    candidates = [item for item in sources if needs_processing(catalog, item, reprocess_duplicates)]
     if max_items is not None:
         candidates = candidates[:max_items]
     results = []
@@ -47,13 +49,13 @@ def refresh_items(settings: Settings, max_items: int | None = None, reprocess_du
             ),
         )
         try:
-            output_dir = process_image(item, output_root, settings.ocr_mode)
-            update_catalog_item(catalog, item, settings.ocr_mode, output_dir)
+            output_dir = process_image(item, output_root)
+            update_catalog_item(catalog, item, output_dir)
             results.append({"item_id": item.item_id, "state": "processed", "output_dir": str(output_dir)})
         except Exception as exc:
             failed += 1
             results.append({"item_id": item.item_id, "state": "failed", "error": str(exc)})
-    save_catalog(appdata_root, catalog)
+    save_catalog(state_root, catalog)
     archive_path = create_download_zip(output_root, [Path(row["output_dir"]) for row in results if row.get("output_dir")])
     result = {
         "schema_version": 1,
@@ -86,14 +88,14 @@ def refresh_items(settings: Settings, max_items: int | None = None, reprocess_du
     return result
 
 
-def process_image(item: ImageSource, output_root: Path, ocr_mode: str) -> Path:
+def process_image(item: ImageSource, output_root: Path) -> Path:
     item_dir = output_root / "items" / item.item_id
     raw_dir = item_dir / "raw_outputs"
     artifacts_dir = item_dir / "artifacts"
     raw_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     source = Path(item.source_path)
-    ocr_payload = run_ocr(source, ocr_mode)
+    ocr_payload = run_ocr(source, OCR_MODE)
     image_record = build_image_record(item, ocr_payload)
     timeline = build_timeline(item, image_record)
     convert_info = {
@@ -103,7 +105,6 @@ def process_image(item: ImageSource, output_root: Path, ocr_mode: str) -> Path:
         "source": item.to_dict(),
         "pipeline": {
             "version": "timeline-for-image-local-v1",
-            "ocr_mode": ocr_mode,
             "source_image_modified": False,
         },
         "outputs": {
@@ -175,13 +176,13 @@ def write_status(run_dir: Path, status: RunStatus) -> None:
 
 
 def list_items(settings: Settings) -> list[dict[str, Any]]:
-    catalog = load_catalog(resolved_appdata_root(settings))
+    catalog = load_catalog(internal_state_root())
     return sorted(catalog.get("items", {}).values(), key=lambda row: row.get("relative_path", ""))
 
 
 def remove_items(settings: Settings, item_ids: list[str], dry_run: bool = False) -> dict[str, Any]:
-    appdata_root = resolved_appdata_root(settings)
-    catalog = load_catalog(appdata_root)
+    state_root = internal_state_root()
+    catalog = load_catalog(state_root)
     records = catalog.get("items", {})
     requested = expand_item_ids(item_ids)
     if not requested:
@@ -208,7 +209,7 @@ def remove_items(settings: Settings, item_ids: list[str], dry_run: bool = False)
             shutil.rmtree(output_dir)
         remove_catalog_item(catalog, item_id)
     if not dry_run:
-        save_catalog(appdata_root, catalog)
+        save_catalog(state_root, catalog)
     return {
         "dry_run": dry_run,
         "requested_count": len(requested),
@@ -231,7 +232,7 @@ def expand_item_ids(values: list[str]) -> list[str]:
 
 
 def list_runs(settings: Settings) -> list[dict[str, Any]]:
-    runs_dir = resolved_appdata_root(settings) / "runs"
+    runs_dir = internal_state_root() / "runs"
     rows = []
     if not runs_dir.exists():
         return rows

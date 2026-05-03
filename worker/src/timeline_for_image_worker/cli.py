@@ -10,12 +10,12 @@ from typing import Any
 from .discovery import discover_images
 from .fs_utils import read_json, write_json
 from .model_inventory import list_models
-from .processor import list_items, list_runs, refresh_items, remove_items
+from .processor import OCR_MODE, list_items, list_runs, refresh_items, remove_items
 from .settings import (
     Settings,
+    internal_state_root,
     init_settings,
     load_settings,
-    resolved_appdata_root,
     resolved_input_roots,
     resolved_output_root,
     save_settings,
@@ -35,8 +35,6 @@ def main(argv: list[str] | None = None) -> int:
     settings_save = settings_sub.add_parser("save")
     settings_save.add_argument("--input-root", action="append")
     settings_save.add_argument("--output-root")
-    settings_save.add_argument("--appdata-root")
-    settings_save.add_argument("--ocr-mode", choices=("off", "auto", "mock"))
 
     files_parser = sub.add_parser("files")
     files_sub = files_parser.add_subparsers(dest="files_command", required=True)
@@ -122,7 +120,6 @@ def handle_settings(args: argparse.Namespace) -> int:
             "resolved": {
                 "input_roots": [str(path) for path in resolved_input_roots(settings)],
                 "output_root": str(resolved_output_root(settings)),
-                "appdata_root": str(resolved_appdata_root(settings)),
             },
         }
         return emit(args, payload, format_settings_status(payload))
@@ -132,8 +129,6 @@ def handle_settings(args: argparse.Namespace) -> int:
             schema_version=current.schema_version,
             input_roots=args.input_root or current.input_roots,
             output_root=args.output_root or current.output_root,
-            appdata_root=args.appdata_root or current.appdata_root,
-            ocr_mode=args.ocr_mode or current.ocr_mode,
         )
         save_settings(updated)
         return emit(args, {"settings": updated.__dict__}, "settings saved")
@@ -193,7 +188,7 @@ def handle_runs(args: argparse.Namespace, settings: Settings) -> int:
 def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
     input_roots = resolved_input_roots(settings)
     output_root = resolved_output_root(settings)
-    appdata_root = resolved_appdata_root(settings)
+    state_root = internal_state_root()
     input_checks = [
         {
             "path": str(path),
@@ -204,15 +199,15 @@ def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
         for path in input_roots
     ]
     output_check = path_check(output_root, needs_write=True)
-    appdata_check = path_check(appdata_root, needs_write=True)
-    ocr_check = doctor_ocr(settings.ocr_mode)
-    validation = validate_settings(settings, input_checks, output_check, appdata_check, ocr_check)
+    state_check = path_check(state_root, needs_write=True)
+    ocr_check = doctor_ocr()
+    validation = validate_settings(settings, input_checks, output_check, state_check, ocr_check)
     payload = {
         "settings_path": str(settings_path()),
         "settings_exists": settings_path().exists(),
         "input_roots": input_checks,
         "output_root": output_check,
-        "appdata_root": appdata_check,
+        "state_root": state_check,
         "ocr": ocr_check,
         "validation": validation,
         "ok": validation["ok"],
@@ -224,7 +219,7 @@ def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
             for row in payload["input_roots"]
         ],
         f"output: {payload['output_root']['path']} writable={payload['output_root']['writable']}",
-        f"appdata: {payload['appdata_root']['path']} writable={payload['appdata_root']['writable']}",
+        f"state: {payload['state_root']['path']} writable={payload['state_root']['writable']}",
         f"ocr: mode={payload['ocr']['mode']} ready={payload['ocr']['ready']}",
         f"ok: {payload['ok']}",
     ]
@@ -235,16 +230,14 @@ def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
     return emit(args, payload, "\n".join(lines))
 
 
-def doctor_ocr(mode: str) -> dict[str, Any]:
-    if mode in {"off", "mock"}:
-        return {"mode": mode, "ready": True, "languages": []}
+def doctor_ocr() -> dict[str, Any]:
     try:
         import pytesseract
 
         languages = sorted(pytesseract.get_languages(config=""))
-        return {"mode": mode, "ready": "jpn" in languages and "eng" in languages, "languages": languages}
+        return {"mode": OCR_MODE, "ready": "jpn" in languages and "eng" in languages, "languages": languages}
     except Exception as exc:
-        return {"mode": mode, "ready": False, "languages": [], "warning": str(exc)}
+        return {"mode": OCR_MODE, "ready": False, "languages": [], "warning": str(exc)}
 
 
 def create_selected_download(settings: Settings, item_ids: list[str], all_items: bool) -> Path:
@@ -283,7 +276,7 @@ def validate_settings(
     settings: Settings,
     input_checks: list[dict[str, Any]],
     output_check: dict[str, Any],
-    appdata_check: dict[str, Any],
+    state_check: dict[str, Any],
     ocr_check: dict[str, Any],
 ) -> dict[str, Any]:
     errors: list[str] = []
@@ -299,12 +292,10 @@ def validate_settings(
             warnings.append(f"Input root has no supported image files: {row['path']}")
     if not output_check["writable"]:
         errors.append(f"Output root is not writable: {output_check['path']}")
-    if not appdata_check["writable"]:
-        errors.append(f"Appdata root is not writable: {appdata_check['path']}")
-    if settings.ocr_mode not in {"off", "auto", "mock"}:
-        errors.append(f"Unsupported ocrMode: {settings.ocr_mode}")
+    if not state_check["writable"]:
+        errors.append(f"State root is not writable: {state_check['path']}")
     if not ocr_check["ready"]:
-        warnings.append(f"OCR backend is not ready for mode={settings.ocr_mode}.")
+        warnings.append(f"OCR backend is not ready for mode={OCR_MODE}.")
     return {"ok": not errors, "errors": errors, "warnings": warnings}
 
 
@@ -359,8 +350,6 @@ def format_settings_status(payload: dict[str, Any]) -> str:
             f"settings_path: {payload['settings_path']}",
             f"input_roots: {', '.join(settings['input_roots'])}",
             f"output_root: {settings['output_root']}",
-            f"appdata_root: {settings['appdata_root']}",
-            f"ocr_mode: {settings['ocr_mode']}",
             f"resolved_output_root: {resolved['output_root']}",
         ]
     )
