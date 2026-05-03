@@ -54,3 +54,9 @@ def update_catalog_item(catalog: dict[str, Any], item: ImageSource, ocr_mode: st
         "signature": source_signature(item, ocr_mode),
         "output_dir": str(output_dir),
     }
+
+
+def remove_catalog_item(catalog: dict[str, Any], item_id: str) -> dict[str, Any] | None:
+    records = catalog.setdefault("items", {})
+    removed = records.pop(item_id, None)
+    return removed if isinstance(removed, dict) else None

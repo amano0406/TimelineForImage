@@ -78,6 +78,99 @@ def test_refresh_creates_master_item_artifacts(tmp_path: Path, monkeypatch) -> N
         assert f"items/{item_dir.name}/image_record.json" in archive.namelist()
 
 
+def test_items_list_paging_and_remove_generated_artifacts_only(tmp_path: Path, monkeypatch, capsys) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    appdata_root = tmp_path / "appdata"
+    settings_path = tmp_path / "settings.json"
+    input_root.mkdir()
+    source = input_root / "sample.png"
+    source.write_bytes(minimal_png(8, 6))
+    settings_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "inputRoots": [str(input_root)],
+                "outputRoot": str(output_root),
+                "appdataRoot": str(appdata_root),
+                "computeMode": "cpu",
+                "ocrMode": "mock",
+                "privacyFilter": "none",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    assert main(["--json", "items", "refresh"]) == 0
+    capsys.readouterr()
+    assert main(["--json", "items", "list", "--page", "1", "--page-size", "1"]) == 0
+    list_payload = json.loads(capsys.readouterr().out)
+    item_id = list_payload["items"][0]["item_id"]
+    item_dir = Path(list_payload["items"][0]["output_dir"])
+    assert item_dir.exists()
+
+    assert main(["--json", "items", "remove", "--item-id", item_id, "--dry-run"]) == 0
+    dry_run_payload = json.loads(capsys.readouterr().out)
+    assert dry_run_payload["dry_run"] is True
+    assert dry_run_payload["removed_count"] == 1
+    assert item_dir.exists()
+    assert source.exists()
+
+    assert main(["--json", "items", "remove", "--item-id", item_id]) == 0
+    remove_payload = json.loads(capsys.readouterr().out)
+    assert remove_payload["dry_run"] is False
+    assert remove_payload["removed_count"] == 1
+    assert remove_payload["source_images_removed"] is False
+    assert not item_dir.exists()
+    assert source.exists()
+
+    assert main(["--json", "items", "list"]) == 0
+    empty_payload = json.loads(capsys.readouterr().out)
+    assert empty_payload["count"] == 0
+
+
+def test_doctor_reports_validation_and_run_show_has_artifacts(tmp_path: Path, monkeypatch, capsys) -> None:
+    input_root = tmp_path / "input"
+    output_root = tmp_path / "output"
+    appdata_root = tmp_path / "appdata"
+    settings_path = tmp_path / "settings.json"
+    input_root.mkdir()
+    (input_root / "sample.png").write_bytes(minimal_png(8, 6))
+    settings_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "inputRoots": [str(input_root)],
+                "outputRoot": str(output_root),
+                "appdataRoot": str(appdata_root),
+                "computeMode": "cpu",
+                "ocrMode": "mock",
+                "privacyFilter": "none",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_ALLOW_HOST_CLI", "1")
+    monkeypatch.setenv("TIMELINE_FOR_IMAGE_SETTINGS_PATH", str(settings_path))
+
+    assert main(["--json", "doctor"]) == 0
+    doctor_payload = json.loads(capsys.readouterr().out)
+    assert doctor_payload["ok"] is True
+    assert doctor_payload["input_roots"][0]["supported_image_count"] == 1
+
+    assert main(["--json", "items", "refresh"]) == 0
+    refresh_payload = json.loads(capsys.readouterr().out)
+    run_id = refresh_payload["run_id"]
+
+    assert main(["--json", "runs", "show", "--run-id", run_id]) == 0
+    show_payload = json.loads(capsys.readouterr().out)
+    assert show_payload["result"]["processed_count"] == 1
+    assert show_payload["items"][0]["artifacts"]["output_dir_exists"] is True
+    assert show_payload["items"][0]["artifacts"]["image_record"].endswith("image_record.json")
+
+
 def minimal_png(width: int, height: int) -> bytes:
     def chunk(kind: bytes, data: bytes) -> bytes:
         import zlib

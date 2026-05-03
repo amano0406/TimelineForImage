@@ -5,7 +5,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from .catalog import load_catalog, needs_processing, save_catalog, update_catalog_item
+from .catalog import load_catalog, needs_processing, remove_catalog_item, save_catalog, update_catalog_item
 from .contracts import ImageSource, RunStatus
 from .discovery import discover_images
 from .fs_utils import now_iso, read_json, write_json
@@ -178,6 +178,57 @@ def write_status(run_dir: Path, status: RunStatus) -> None:
 def list_items(settings: Settings) -> list[dict[str, Any]]:
     catalog = load_catalog(resolved_appdata_root(settings))
     return sorted(catalog.get("items", {}).values(), key=lambda row: row.get("relative_path", ""))
+
+
+def remove_items(settings: Settings, item_ids: list[str], dry_run: bool = False) -> dict[str, Any]:
+    appdata_root = resolved_appdata_root(settings)
+    catalog = load_catalog(appdata_root)
+    records = catalog.get("items", {})
+    requested = expand_item_ids(item_ids)
+    if not requested:
+        raise ValueError("No item IDs were specified.")
+    removed: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for item_id in requested:
+        row = records.get(item_id)
+        if not isinstance(row, dict):
+            missing.append(item_id)
+            continue
+        output_dir = Path(str(row.get("output_dir") or ""))
+        removed.append(
+            {
+                "item_id": item_id,
+                "relative_path": row.get("relative_path"),
+                "output_dir": str(output_dir),
+                "output_dir_exists": output_dir.exists(),
+            }
+        )
+        if dry_run:
+            continue
+        if output_dir.exists():
+            shutil.rmtree(output_dir)
+        remove_catalog_item(catalog, item_id)
+    if not dry_run:
+        save_catalog(appdata_root, catalog)
+    return {
+        "dry_run": dry_run,
+        "requested_count": len(requested),
+        "removed_count": len(removed),
+        "missing_count": len(missing),
+        "removed": removed,
+        "missing": missing,
+        "source_images_removed": False,
+    }
+
+
+def expand_item_ids(values: list[str]) -> list[str]:
+    item_ids: list[str] = []
+    for value in values:
+        for part in str(value).split(","):
+            stripped = part.strip()
+            if stripped and stripped not in item_ids:
+                item_ids.append(stripped)
+    return item_ids
 
 
 def list_runs(settings: Settings) -> list[dict[str, Any]]:

@@ -125,8 +125,13 @@ Windows では PowerShell が正面玄関です。
 .\cli.ps1 files list
 .\cli.ps1 items refresh --max-items 4
 .\cli.ps1 items list
+.\cli.ps1 items list --page 1 --page-size 50
+.\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx --dry-run
+.\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx
 .\cli.ps1 items download --all
 .\cli.ps1 runs list
+.\cli.ps1 runs list --page 1 --page-size 20
+.\cli.ps1 runs show --run-id <RUN_ID>
 .\cli.ps1 models list
 .\cli.ps1 doctor
 ```
@@ -158,6 +163,22 @@ timeline-for-image
 ```
 
 worker service は Python CLI を実行します。browser port は公開しません。
+
+## 運用上の削除
+
+`items remove` は master item の生成物と catalog entry だけを削除します。元画像は削除しません。
+
+削除前確認:
+
+```powershell
+.\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx --dry-run
+```
+
+実削除:
+
+```powershell
+.\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx
+```
 
 Docker resources:
 
