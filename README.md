@@ -1,61 +1,104 @@
 # TimelineForImage
 
-Local Docker-first CLI for converting image files into per-image `image_record.json` and `timeline.json` artifacts.
+## What This Product Does
 
-This file is the repository entry point. The canonical operation guide is [README.ja.md](README.ja.md).
+TimelineForImage converts local image files into per-image `image_record.json` and `timeline.json` records. It is a local Docker-first CLI worker for downstream Timeline, search, handoff, and LLM workflows. It does not edit source images or perform person recognition.
 
-## Product Role
+## Input
 
-`TimelineForImage` is the image sub-product in the Timeline product family.
+The user provides one or more local image folders through `settings.json`.
 
-Its job is to turn local image files into stable structured records that later tools, LLM workflows, search indexes, and handoff processes can consume. It is not an image viewer, photo library, annotation UI, cloud vision service, or person-recognition product.
+Supported image extensions:
 
-The product is intentionally narrow:
+```text
+.jpg .jpeg .png .webp .bmp .gif .tif .tiff
+```
 
-- read images from configured local folders
-- preserve original image files
-- create durable per-image records
-- expose stable JSON contracts
-- run locally through Docker-first PowerShell entry points
+Default settings template:
 
-## Design Principles
+```json
+{
+  "schemaVersion": 1,
+  "inputRoots": [
+    "C:\\TimelineData\\input-image\\"
+  ],
+  "outputRoot": "C:\\TimelineData\\image"
+}
+```
 
-- Local-first: default processing stays on the local machine.
-- Source-preserving: original image files are never edited.
-- Contract-first: `settings.json` and `image_record.json` are governed by schemas.
-- Operation-first: the normal interface is a resident Docker worker plus `cli.ps1`.
-- Boundary-first: advanced semantic grouping, similar-image search, privacy masking, and person clustering are outside the current responsibility.
+## Output
 
-## Documentation Map
+The main output is one `image_record.json` per image.
 
-| File | Role |
-| --- | --- |
-| [README.md](README.md) | Short repository entry point and documentation routing. |
-| [README.ja.md](README.ja.md) | Primary product documentation: settings, output contract, CLI, operations, and tests. |
-| [MODEL_AND_RUNTIME_NOTES.md](MODEL_AND_RUNTIME_NOTES.md) | Runtime and model/backend notes. |
-| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Third-party component notice. |
-| [schemas/settings.schema.json](schemas/settings.schema.json) | Machine-readable `settings.json` contract. |
-| [schemas/image_record.schema.json](schemas/image_record.schema.json) | Machine-readable `image_record.json` contract. |
+```text
+<outputRoot>/
+  items/
+    <item-id>/
+      image_record.json
+      timeline.json
+      convert_info.json
+      raw_outputs/
+        ocr.json
+      artifacts/
+        normalized_image.jpg
+        debug_overlay.jpg
+  downloads/
+    TimelineForImage-export-<timestamp>-<id>.zip
+    TimelineForImage-selected.zip
+  latest/
+    TimelineForImage-export.zip
+```
 
-## Operating Entry Points
+Export ZIPs do not include original source images.
 
-Use the bundled PowerShell launchers from `C:\apps\TimelineForImage`.
+## Quick Start
+
+Run from PowerShell in `C:\apps\TimelineForImage`.
 
 ```powershell
 .\start.ps1
+.\cli.ps1 settings init
+.\cli.ps1 settings save --input-root C:\TimelineData\input-image --output-root C:\TimelineData\image
 .\cli.ps1 doctor
 .\cli.ps1 items refresh --max-items 4
 .\cli.ps1 items list
 .\cli.ps1 items download
+```
+
+Stop the resident worker when needed:
+
+```powershell
 .\stop.ps1
 ```
 
-Do not run the host Python package directly for normal operation. The worker is intended to run inside Docker Compose.
+## Sample
 
-## Product Boundaries
+Committed sample input and sample output fixtures are planned. Current tests create temporary sample images and clean them up after validation.
 
-- Original images are not modified.
-- Export ZIPs do not include original images.
-- OCR text is not privacy-redacted.
-- Person identity recognition and face recognition are not performed.
-- The default worker does not send images to external APIs.
+## Common Commands
+
+```powershell
+.\cli.ps1 files list
+.\cli.ps1 items refresh
+.\cli.ps1 items refresh --max-items 4
+.\cli.ps1 items list --page 1 --page-size 50
+.\cli.ps1 items download
+.\cli.ps1 items download --item-id image-xxxxxxxxxxxxxxxx
+.\cli.ps1 items download --to C:\path\handoff --overwrite
+.\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx --dry-run
+.\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx
+.\cli.ps1 runs list
+.\cli.ps1 runs show --run-id <RUN_ID>
+.\cli.ps1 health
+.\cli.ps1 doctor
+.\cli.ps1 maintenance cleanup --dry-run
+```
+
+## Detailed Docs
+
+- [CLI](docs/CLI.md): read this for the command contract.
+- [Outputs](docs/OUTPUTS.md): read this before consuming generated files.
+- [Pipeline](docs/PIPELINE.md): read this to understand how image records are produced.
+- [Runtime](docs/RUNTIME.md): read this for Docker, OCR, and third-party runtime notes.
+- [Testing](docs/TESTING.md): read this before running validation locally or in CI.
+- [Safety](docs/SAFETY.md): read this before operating on real image folders.
