@@ -230,7 +230,7 @@ try {
     $run = Invoke-TfiCliJson -Arguments @("runs", "show", "--run-id", $refresh.run_id)
     Assert-Tfi ($run.result.processed_count -eq 2) "runs show did not report 2 processed items."
 
-    $download = Invoke-TfiCliJson -Arguments @("items", "download", "--all")
+    $download = Invoke-TfiCliJson -Arguments @("items", "download")
     $archivePath = ConvertFrom-TfiContainerPath -ContainerPath ([string]$download.archive_path)
     Assert-Tfi (Test-Path -LiteralPath $archivePath) "download archive was not created: $archivePath"
 

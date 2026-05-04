@@ -46,7 +46,7 @@ Use the bundled PowerShell launchers from `C:\apps\TimelineForImage`.
 .\cli.ps1 doctor
 .\cli.ps1 items refresh --max-items 4
 .\cli.ps1 items list
-.\cli.ps1 items download --all
+.\cli.ps1 items download
 .\stop.ps1
 ```
 

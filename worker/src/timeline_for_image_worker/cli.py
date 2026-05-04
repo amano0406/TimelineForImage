@@ -62,7 +62,6 @@ def main(argv: list[str] | None = None) -> int:
     add_paging_arguments(items_list_parser)
     download_parser = items_sub.add_parser("download")
     download_parser.add_argument("--item-id", action="append")
-    download_parser.add_argument("--all", action="store_true")
     download_parser.add_argument("--to")
     download_parser.add_argument("--overwrite", action="store_true")
     remove_parser = items_sub.add_parser("remove")
@@ -267,7 +266,7 @@ def handle_items(args: argparse.Namespace, settings: Settings) -> int:
         text = "\n".join([format_page_summary(payload), *text_rows]) if text_rows else "No items."
         return emit(args, payload, text)
     if args.items_command == "download":
-        archive = create_selected_download(settings, args.item_id or [], args.all, args.to, args.overwrite)
+        archive = create_selected_download(settings, args.item_id or [], args.to, args.overwrite)
         return emit(args, {"archive_path": str(archive)}, f"archive_path: {archive}")
     if args.items_command == "remove":
         result = remove_items(settings, args.item_id, dry_run=args.dry_run)
@@ -363,23 +362,22 @@ def doctor_ocr() -> dict[str, Any]:
 def create_selected_download(
     settings: Settings,
     item_ids: list[str],
-    all_items: bool,
     destination: str | None = None,
     overwrite: bool = False,
 ) -> Path:
     with exclusive_lock(internal_state_root(), "catalog"):
-        return create_selected_download_unlocked(settings, item_ids, all_items, destination, overwrite)
+        return create_selected_download_unlocked(settings, item_ids, destination, overwrite)
 
 
 def create_selected_download_unlocked(
     settings: Settings,
     item_ids: list[str],
-    all_items: bool,
     destination: str | None = None,
     overwrite: bool = False,
 ) -> Path:
     rows = list_items(settings)
-    selected = rows if all_items else [row for row in rows if row["item_id"] in set(item_ids)]
+    selected_ids = set(expand_download_item_ids(item_ids))
+    selected = rows if not selected_ids else [row for row in rows if row["item_id"] in selected_ids]
     if not selected:
         raise ValueError("No items selected for download.")
     output_root = resolved_output_root(settings)
@@ -394,6 +392,16 @@ def create_selected_download_unlocked(
                     raise FileNotFoundError(f"Item artifact does not exist: {path}")
                 zf.write(path, f"items/{item_dir.name}/{name}")
     return archive
+
+
+def expand_download_item_ids(values: list[str]) -> list[str]:
+    item_ids: list[str] = []
+    for value in values:
+        for part in str(value).split(","):
+            stripped = part.strip()
+            if stripped and stripped not in item_ids:
+                item_ids.append(stripped)
+    return item_ids
 
 
 def resolve_download_destination(output_root: Path, destination: str | None, overwrite: bool) -> Path:

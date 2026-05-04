@@ -43,7 +43,7 @@ jobs:
           docker compose run --rm --no-deps worker items refresh --max-items 1 --reprocess-duplicates
           docker compose run --rm --no-deps worker items list --page 1 --page-size 10
           docker compose run --rm --no-deps worker runs list --page 1 --page-size 10
-          docker compose run --rm --no-deps worker items download --all
+          docker compose run --rm --no-deps worker items download
           cleanup="$(docker compose run --rm --no-deps worker --json maintenance cleanup --keep-runs 1 --keep-downloads 1 --dry-run)"
           printf '%s' "$cleanup" | python -c 'import json, sys; payload=json.load(sys.stdin); assert payload["dry_run"] is True; assert payload["runs"]["removed_count"] >= 1; assert payload["downloads"]["removed_count"] >= 1'
           test -f output/ci-operational/state/catalog.json

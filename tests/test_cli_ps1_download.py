@@ -51,7 +51,7 @@ class CliPs1DownloadTest(unittest.TestCase):
             image_records = sorted((RECORDS_ROOT / "items").glob("*/image_record.json"))
             self.assertEqual(len(image_records), 1)
 
-            run_cli_ps1(powershell, "--json", "items", "download", "--all")
+            run_cli_ps1(powershell, "--json", "items", "download")
             archive_path = RECORDS_ROOT / "downloads" / "TimelineForImage-selected.zip"
 
             self.assertTrue(archive_path.exists())

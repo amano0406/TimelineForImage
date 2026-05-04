@@ -209,8 +209,8 @@ Windows では PowerShell が正面玄関です。
 .\cli.ps1 items list --page 1 --page-size 50
 .\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx --dry-run
 .\cli.ps1 items remove --item-id image-xxxxxxxxxxxxxxxx
-.\cli.ps1 items download --all
-.\cli.ps1 items download --all --to C:\path\handoff --overwrite
+.\cli.ps1 items download
+.\cli.ps1 items download --to C:\path\handoff --overwrite
 .\cli.ps1 runs list
 .\cli.ps1 runs list --page 1 --page-size 20
 .\cli.ps1 runs show --run-id <RUN_ID>
@@ -295,7 +295,7 @@ cd C:\apps\TimelineForImage
 docker compose run --rm --entrypoint sh worker -c "pip install --no-cache-dir -r /workspace/worker/requirements-dev.txt >/tmp/pip-test.log && PYTHONPATH=/workspace/worker/src python -m pytest /workspace/worker/tests -q"
 ```
 
-`cli.ps1` をローカル入口として実際に呼び出し、`items download --all` の ZIP 生成まで確認する統合テスト:
+`cli.ps1` をローカル入口として実際に呼び出し、`items download` の ZIP 生成まで確認する統合テスト:
 
 ```powershell
 cd C:\apps\TimelineForImage

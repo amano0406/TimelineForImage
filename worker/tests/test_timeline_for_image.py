@@ -422,7 +422,7 @@ def test_items_list_uses_current_output_root_and_download_to_destination(tmp_pat
     assert main(["--json", "items", "refresh"]) == 0
     capsys.readouterr()
     target_dir = tmp_path / "handoff"
-    assert main(["--json", "items", "download", "--all", "--to", str(target_dir)]) == 0
+    assert main(["--json", "items", "download", "--to", str(target_dir)]) == 0
     download_payload = json.loads(capsys.readouterr().out)
     archive_path = Path(download_payload["archive_path"])
     assert archive_path == target_dir / "TimelineForImage-selected.zip"
