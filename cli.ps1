@@ -7,6 +7,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8NoBom
+[Console]::InputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
+
 $repoRoot = $PSScriptRoot
 if (-not $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT) {
     $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT = "C:\"
