@@ -4,6 +4,28 @@ Local Docker-first CLI for converting image files into per-image `image_record.j
 
 This file is the repository entry point. The canonical operation guide is [README.ja.md](README.ja.md).
 
+## Product Role
+
+`TimelineForImage` is the image sub-product in the Timeline product family.
+
+Its job is to turn local image files into stable structured records that later tools, LLM workflows, search indexes, and handoff processes can consume. It is not an image viewer, photo library, annotation UI, cloud vision service, or person-recognition product.
+
+The product is intentionally narrow:
+
+- read images from configured local folders
+- preserve original image files
+- create durable per-image records
+- expose stable JSON contracts
+- run locally through Docker-first PowerShell entry points
+
+## Design Principles
+
+- Local-first: default processing stays on the local machine.
+- Source-preserving: original image files are never edited.
+- Contract-first: `settings.json` and `image_record.json` are governed by schemas.
+- Operation-first: the normal interface is a resident Docker worker plus `cli.ps1`.
+- Boundary-first: advanced semantic grouping, similar-image search, privacy masking, and person clustering are outside the current responsibility.
+
 ## Documentation Map
 
 | File | Role |
