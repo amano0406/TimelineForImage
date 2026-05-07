@@ -83,6 +83,16 @@ function Get-TfiPowerShellCommand {
     throw "PowerShell executable was not found."
 }
 
+function Get-TfiDockerCommand {
+    $dockerExe = Join-Path $env:ProgramFiles "Docker\Docker\resources\bin\docker.exe"
+    if (Test-Path -LiteralPath $dockerExe) { return $dockerExe }
+    $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+    if ($docker) { return $docker.Source }
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if ($docker) { return $docker.Source }
+    throw "docker.exe was not found. Install or start Docker Desktop."
+}
+
 function ConvertTo-TfiWorkspacePath {
     param([string]$WindowsPath)
 
@@ -166,6 +176,30 @@ function Invoke-TfiCliJson {
     }
 }
 
+function Test-TfiComposeWorkerRunning {
+    param([string]$Docker)
+
+    $result = Invoke-TfiProcess `
+        -FilePath $Docker `
+        -Arguments @("compose", "--project-directory", $repoRoot, "ps", "--status", "running", "--services") `
+        -Environment $script:testEnvironment
+    if ($result.ExitCode -ne 0) {
+        return $false
+    }
+
+    $services = @($result.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    return $services -contains "worker"
+}
+
+function Stop-TfiCompose {
+    param([string]$Docker)
+
+    [void](Invoke-TfiProcess `
+        -FilePath $Docker `
+        -Arguments @("compose", "--project-directory", $repoRoot, "down") `
+        -Environment $script:testEnvironment)
+}
+
 $success = $false
 $powershell = Get-TfiPowerShellCommand
 $workRootFull = [System.IO.Path]::GetFullPath($WorkRoot)
@@ -182,6 +216,8 @@ $testEnvironment = @{
     "TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT" = (ConvertTo-TfiWorkspacePath -WindowsPath $stateRoot)
     "TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT" = "C:\"
 }
+$docker = Get-TfiDockerCommand
+$workerWasRunningBeforeTest = Test-TfiComposeWorkerRunning -Docker $docker
 
 try {
     if (Test-Path -LiteralPath $workRootFull) {
@@ -273,6 +309,9 @@ try {
     Write-Host "Operational test passed."
 }
 finally {
+    if (-not $workerWasRunningBeforeTest) {
+        Stop-TfiCompose -Docker $docker
+    }
     if ($success -and -not $KeepOutput) {
         Remove-Item -LiteralPath $workRootFull -Recurse -Force -ErrorAction SilentlyContinue
     }

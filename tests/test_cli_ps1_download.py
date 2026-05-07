@@ -24,10 +24,13 @@ class CliPs1DownloadTest(unittest.TestCase):
         powershell = find_powershell_command()
         if powershell is None:
             self.skipTest("PowerShell is not available on this host.")
-        if shutil.which("docker.exe") is None and shutil.which("docker") is None:
+        docker = find_docker_command()
+        if docker is None:
             self.skipTest("Docker CLI is not available on this host.")
 
         original_settings = REPO_SETTINGS_PATH.read_bytes() if REPO_SETTINGS_PATH.exists() else None
+        worker_was_running = compose_worker_running(docker)
+        worker_run_containers_before = worker_run_containers(docker)
         try:
             shutil.rmtree(TEST_ROOT, ignore_errors=True)
             INPUT_ROOT.mkdir(parents=True)
@@ -42,6 +45,7 @@ class CliPs1DownloadTest(unittest.TestCase):
                 "--output-root",
                 to_windows_path(RECORDS_ROOT),
             )
+            self.assertTrue(compose_worker_running(docker))
             self.assertTrue(SETTINGS_PATH.exists())
             if original_settings is None:
                 self.assertFalse(REPO_SETTINGS_PATH.exists())
@@ -63,7 +67,10 @@ class CliPs1DownloadTest(unittest.TestCase):
             self.assertTrue(any(name.endswith("/timeline.json") for name in names))
             self.assertTrue(any(name.endswith("/image_record.json") for name in names))
             self.assertFalse(any(name.endswith("sample.png") for name in names))
+            self.assertEqual(worker_run_containers(docker), worker_run_containers_before)
         finally:
+            if not worker_was_running:
+                run_docker_compose(docker, "down", check=False)
             shutil.rmtree(TEST_ROOT, ignore_errors=True)
             if original_settings is None:
                 REPO_SETTINGS_PATH.unlink(missing_ok=True)
@@ -127,6 +134,43 @@ def find_powershell_command() -> list[str] | None:
         return ["cmd.exe", "/c", "powershell.exe"]
     powershell = shutil.which("powershell.exe") or shutil.which("pwsh")
     return [powershell] if powershell else None
+
+
+def find_docker_command() -> str | None:
+    return shutil.which("docker.exe") or shutil.which("docker")
+
+
+def run_docker(docker: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        [docker, *args],
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=180,
+        check=False,
+    )
+    if check and completed.returncode != 0:
+        raise AssertionError(f"docker {' '.join(args)} failed\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}")
+    return completed
+
+
+def run_docker_compose(docker: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return run_docker(docker, "compose", "--project-directory", to_windows_path(REPO_ROOT), *args, check=check)
+
+
+def compose_worker_running(docker: str) -> bool:
+    completed = run_docker_compose(docker, "ps", "--status", "running", "--services", check=False)
+    if completed.returncode != 0:
+        return False
+    services = {line.strip() for line in completed.stdout.splitlines() if line.strip()}
+    return "worker" in services
+
+
+def worker_run_containers(docker: str) -> set[str]:
+    completed = run_docker(docker, "ps", "--format", "{{.Names}}", check=False)
+    if completed.returncode != 0:
+        return set()
+    return {line.strip() for line in completed.stdout.splitlines() if line.strip().startswith("timeline-for-image-worker-run-")}
 
 
 def to_windows_path(path: Path) -> str:

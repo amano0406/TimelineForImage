@@ -10,7 +10,13 @@ TimelineForImage is a Docker-first local CLI product.
 - Docker Desktop or compatible Docker Compose runtime
 - Worker image built from `docker/worker.Dockerfile`
 
-The normal command path is PowerShell to Docker Compose to the Python worker.
+The normal command path is PowerShell to a resident Docker Compose worker to the Python CLI module:
+
+```text
+cli.ps1 -> docker compose up -d --build when needed -> docker compose exec -T worker python -m timeline_for_image_worker
+```
+
+Product commands use the resident worker container. One-off worker containers are reserved for isolated test harnesses, not normal operation.
 
 ## Docker Resources
 

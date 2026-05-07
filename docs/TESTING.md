@@ -11,6 +11,8 @@ cd C:\apps\TimelineForImage
 docker compose run --rm --entrypoint sh worker -c "pip install --no-cache-dir -r /workspace/worker/requirements-dev.txt >/tmp/pip-test.log && PYTHONPATH=/workspace/worker/src python -m pytest /workspace/worker/tests -q"
 ```
 
+This command intentionally uses an isolated test container. Product CLI commands should go through the resident worker started by `cli.ps1` or `start.ps1`.
+
 ## Local CLI Download Test
 
 ```powershell

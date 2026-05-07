@@ -13,6 +13,8 @@ TimelineForImage is operated through the PowerShell launchers in the repository 
 
 `start.ps1` starts the Docker Compose worker in the background. `cli.ps1` runs commands inside the resident worker when it is available.
 
+If the worker is not running, `cli.ps1` starts the resident Docker Compose project first and then executes the command with `docker compose exec`. Normal product commands should not create one-off `worker-run-*` containers.
+
 ## Settings
 
 ```powershell

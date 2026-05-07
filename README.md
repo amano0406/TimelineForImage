@@ -65,6 +65,8 @@ Run from PowerShell in `C:\apps\TimelineForImage`.
 .\cli.ps1 items download
 ```
 
+`cli.ps1` also starts the resident Docker worker when it is not already running, then executes commands inside that worker.
+
 Stop the resident worker when needed:
 
 ```powershell
