@@ -2,13 +2,20 @@
 
 [Back to README](../README.md)
 
-TimelineForImage is operated through the PowerShell launchers in the repository root. Normal users should use `start.ps1`, `stop.ps1`, and `cli.ps1`; host Python execution is not the supported entry point.
+TimelineForImage is operated through the launchers in the repository root. Normal users should use `start.ps1`, `stop.ps1`, and `cli.ps1`; `start.bat` and `stop.bat` are Windows command prompt / Explorer-friendly wrappers. Host Python execution is not the supported entry point.
 
 ## Worker Lifecycle
 
 ```powershell
 .\start.ps1
 .\stop.ps1
+```
+
+Equivalent command prompt wrappers:
+
+```cmd
+start.bat
+stop.bat
 ```
 
 `start.ps1` starts the Docker Compose worker in the background. `cli.ps1` runs commands inside the resident worker when it is available.
