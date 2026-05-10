@@ -2,6 +2,7 @@ settings.json
 .docker/
 .playwright-cli/
 output/
+release/
 *.zip
 __pycache__/
 .pytest_cache/
