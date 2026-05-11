@@ -77,7 +77,7 @@ Stop the resident worker when needed:
 
 ## Sample
 
-Committed sample input and sample output fixtures are planned. Current tests create temporary sample images and clean them up after validation.
+Current tests create temporary sample images and clean them up after validation.
 
 ## Common Commands
 
@@ -102,7 +102,5 @@ Committed sample input and sample output fixtures are planned. Current tests cre
 
 - [CLI](docs/CLI.md): read this for the command contract.
 - [Outputs](docs/OUTPUTS.md): read this before consuming generated files.
-- [Pipeline](docs/PIPELINE.md): read this to understand how image records are produced.
-- [Runtime](docs/RUNTIME.md): read this for Docker, OCR, and third-party runtime notes.
+- [Runtime](docs/RUNTIME.md): read this for Docker, pipeline, OCR, and safety notes.
 - [Testing](docs/TESTING.md): read this before running validation locally or in CI.
-- [Safety](docs/SAFETY.md): read this before operating on real image folders.
