@@ -337,6 +337,11 @@ def handle_maintenance(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
+    payload = build_doctor_payload(settings)
+    return emit(args, payload, format_doctor(payload))
+
+
+def build_doctor_payload(settings: Settings) -> dict[str, Any]:
     input_roots = resolved_input_roots(settings)
     output_root = resolved_output_root(settings)
     state_root = internal_state_root()
@@ -363,6 +368,11 @@ def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
         "validation": validation,
         "ok": validation["ok"],
     }
+    return payload
+
+
+def format_doctor(payload: dict[str, Any]) -> str:
+    validation = payload["validation"]
     lines = [
         f"settings: {payload['settings_path']} exists={payload['settings_exists']}",
         *[
@@ -378,7 +388,7 @@ def handle_doctor(args: argparse.Namespace, settings: Settings) -> int:
         lines.extend(["errors:", *[f"  - {error}" for error in validation["errors"]]])
     if validation["warnings"]:
         lines.extend(["warnings:", *[f"  - {warning}" for warning in validation["warnings"]]])
-    return emit(args, payload, "\n".join(lines))
+    return "\n".join(lines)
 
 
 def doctor_ocr() -> dict[str, Any]:
