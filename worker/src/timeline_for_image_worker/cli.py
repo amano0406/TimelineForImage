@@ -36,10 +36,37 @@ from .settings import (
 
 
 def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        result = dispatch_command(args)
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if result is None:
+        parser.error("Unsupported command.")
+    return result
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="timeline-for-image")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    add_settings_parser(sub)
+    add_files_parser(sub)
+    add_items_parser(sub)
+    add_runs_parser(sub)
+    add_models_parser(sub)
+    add_serve_parser(sub)
+    sub.add_parser("health")
+    sub.add_parser("doctor")
+    add_maintenance_parser(sub)
+
+    return parser
+
+
+def add_settings_parser(sub: Any) -> None:
     settings_parser = sub.add_parser("settings")
     settings_sub = settings_parser.add_subparsers(dest="settings_command", required=True)
     settings_sub.add_parser("init")
@@ -48,11 +75,15 @@ def main(argv: list[str] | None = None) -> int:
     settings_save.add_argument("--input-root", action="append")
     settings_save.add_argument("--output-root")
 
+
+def add_files_parser(sub: Any) -> None:
     files_parser = sub.add_parser("files")
     files_sub = files_parser.add_subparsers(dest="files_command", required=True)
     files_list_parser = files_sub.add_parser("list")
     add_paging_arguments(files_list_parser)
 
+
+def add_items_parser(sub: Any) -> None:
     items_parser = sub.add_parser("items")
     items_sub = items_parser.add_subparsers(dest="items_command", required=True)
     refresh_parser = items_sub.add_parser("refresh")
@@ -68,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     remove_parser.add_argument("--item-id", action="append", default=[])
     remove_parser.add_argument("--dry-run", action="store_true")
 
+
+def add_runs_parser(sub: Any) -> None:
     runs_parser = sub.add_parser("runs")
     runs_sub = runs_parser.add_subparsers(dest="runs_command", required=True)
     runs_list_parser = runs_sub.add_parser("list")
@@ -75,18 +108,21 @@ def main(argv: list[str] | None = None) -> int:
     show_run = runs_sub.add_parser("show")
     show_run.add_argument("--run-id", required=True)
 
+
+def add_models_parser(sub: Any) -> None:
     models_parser = sub.add_parser("models")
     models_sub = models_parser.add_subparsers(dest="models_command", required=True)
     models_sub.add_parser("list")
 
+
+def add_serve_parser(sub: Any) -> None:
     serve_parser = sub.add_parser("serve")
     serve_parser.add_argument("--interval-seconds", type=float)
     serve_parser.add_argument("--max-items", type=int)
     serve_parser.add_argument("--once", action="store_true")
 
-    sub.add_parser("health")
-    sub.add_parser("doctor")
 
+def add_maintenance_parser(sub: Any) -> None:
     maintenance_parser = sub.add_parser("maintenance")
     maintenance_sub = maintenance_parser.add_subparsers(dest="maintenance_command", required=True)
     cleanup_parser = maintenance_sub.add_parser("cleanup")
@@ -94,33 +130,29 @@ def main(argv: list[str] | None = None) -> int:
     cleanup_parser.add_argument("--keep-downloads", type=int, default=20)
     cleanup_parser.add_argument("--dry-run", action="store_true")
 
-    args = parser.parse_args(argv)
-    try:
-        enforce_docker_first()
-        if args.command == "health":
-            return handle_health(args)
-        if args.command == "settings":
-            return handle_settings(args)
-        if args.command == "serve":
-            return handle_serve(args)
-        settings = load_settings()
-        if args.command == "files":
-            return handle_files(args, settings)
-        if args.command == "items":
-            return handle_items(args, settings)
-        if args.command == "runs":
-            return handle_runs(args, settings)
-        if args.command == "models":
-            return emit(args, {"models": list_models()}, format_models(list_models()))
-        if args.command == "doctor":
-            return handle_doctor(args, settings)
-        if args.command == "maintenance":
-            return handle_maintenance(args, settings)
-    except Exception as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    parser.error("Unsupported command.")
-    return 2
+
+def dispatch_command(args: argparse.Namespace) -> int | None:
+    enforce_docker_first()
+    if args.command == "health":
+        return handle_health(args)
+    if args.command == "settings":
+        return handle_settings(args)
+    if args.command == "serve":
+        return handle_serve(args)
+    settings = load_settings()
+    if args.command == "files":
+        return handle_files(args, settings)
+    if args.command == "items":
+        return handle_items(args, settings)
+    if args.command == "runs":
+        return handle_runs(args, settings)
+    if args.command == "models":
+        return emit(args, {"models": list_models()}, format_models(list_models()))
+    if args.command == "doctor":
+        return handle_doctor(args, settings)
+    if args.command == "maintenance":
+        return handle_maintenance(args, settings)
+    return None
 
 
 def enforce_docker_first() -> None:
