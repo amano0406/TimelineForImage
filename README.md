@@ -1,5 +1,20 @@
 # TimelineForImage
 
+## Current Status
+
+TimelineForImage is currently a Docker-first CLI product. Starting the Docker
+runtime does not process images automatically; image processing starts only when
+you run an explicit CLI command such as `items refresh` or `serve --once`. The broad API
+migration has been rolled back; the only HTTP API intentionally exposed by this
+product is the local C# health endpoint:
+
+```text
+GET /health
+```
+
+All image processing, listing, download, removal, run inspection, and
+maintenance operations are covered by `cli.ps1`.
+
 ## What This Product Does
 
 TimelineForImage converts local image files into per-image `image_record.json` and `timeline.json` records. It is a local Docker-first CLI worker for downstream Timeline, search, handoff, and LLM workflows. It does not edit source images or perform person recognition.
@@ -19,16 +34,27 @@ Default settings template:
 ```json
 {
   "schemaVersion": 1,
+  "runtime": {
+    "instanceName": "",
+    "apiPort": 19400
+  },
   "inputRoots": [
     "C:\\TimelineData\\input-image\\"
   ],
-  "outputRoot": "C:\\TimelineData\\image"
+  "outputRoot": "C:\\TimelineData\\image",
+  "huggingfaceToken": "hf_...",
+  "computeMode": "gpu"
 }
 ```
 
+`start.ps1` and `cli.ps1` fill `runtime.instanceName` when it is empty. If the
+product uses a Hugging Face token, store it as `huggingfaceToken`; omit the key
+when no token is needed.
+
 ## Output
 
-The main output is one `image_record.json` per image.
+The main output is one `image_record.json` per image. See
+[Outputs](docs/OUTPUTS.md) for concrete JSON structures and data examples.
 
 ```text
 <outputRoot>/
@@ -65,9 +91,27 @@ Run from PowerShell in `C:\apps\TimelineForImage`.
 .\cli.ps1 items download
 ```
 
+If the local PowerShell execution policy blocks scripts, run through
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File` or use the provided
+batch wrappers where available.
+
 `start.bat` and `stop.bat` are also available as Windows command prompt / Explorer-friendly wrappers around the PowerShell launchers.
 
-`cli.ps1` also starts the resident Docker worker when it is not already running, then executes commands inside that worker.
+`start.ps1` starts the resident runtime and health endpoint only. It does not
+start image processing. `cli.ps1` also starts the resident Docker worker when it
+is not already running, then executes commands inside that worker.
+
+The worker also exposes a minimal local C# health endpoint on the configured
+port:
+
+```powershell
+curl.exe http://127.0.0.1:19400/health
+```
+
+The response is the JSON boolean `true` or `false`.
+
+No other HTTP API routes are part of the current contract. For example,
+`/image/*` routes are intentionally not available.
 
 Stop the resident worker when needed:
 
@@ -97,6 +141,23 @@ Current tests create temporary sample images and clean them up after validation.
 .\cli.ps1 doctor
 .\cli.ps1 maintenance cleanup --dry-run
 ```
+
+`items remove` deletes generated item artifacts and catalog entries only. It
+does not delete source image files.
+
+## Validation
+
+Use these commands for local validation:
+
+```powershell
+dotnet build health\TimelineForImage.Health\TimelineForImage.Health.csproj
+python -m unittest discover -s tests
+docker compose --project-directory . -p timeline-for-image-unit run --rm --entrypoint sh worker -c "pip install --quiet -e /workspace/worker pytest jsonschema pillow && PYTHONPATH=/workspace/worker/src python -m pytest /workspace/worker/tests -q"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-operational.ps1
+```
+
+The operational test uses isolated settings, input, output, state, and Docker
+project names. It does not use the root `settings.json`.
 
 ## Detailed Docs
 

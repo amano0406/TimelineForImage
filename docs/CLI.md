@@ -18,7 +18,9 @@ start.bat
 stop.bat
 ```
 
-`start.ps1` starts the Docker Compose worker in the background. `cli.ps1` runs commands inside the resident worker when it is available.
+`start.ps1` starts the Docker Compose runtime and health endpoint in the
+background. It does not process images automatically. `cli.ps1` runs commands
+inside the resident worker when it is available.
 
 If the worker is not running, `cli.ps1` starts the resident Docker Compose project first and then executes the command with `docker compose exec`. Normal product commands should not create one-off `worker-run-*` containers.
 
@@ -33,8 +35,12 @@ If the worker is not running, `cli.ps1` starts the resident Docker Compose proje
 `settings.json` contains only:
 
 - `schemaVersion`
+- `runtime.instanceName`
+- `runtime.apiPort`
 - `inputRoots`
 - `outputRoot`
+- `huggingfaceToken` when configured
+- `computeMode`
 
 Internal state, cache, OCR configuration, and test paths are not user-facing settings.
 
@@ -50,6 +56,7 @@ Internal state, cache, OCR configuration, and test paths are not user-facing set
 ```
 
 `items refresh` processes new or changed images. Unchanged images are skipped.
+This explicit command is the normal way to start image processing.
 
 ## Download
 

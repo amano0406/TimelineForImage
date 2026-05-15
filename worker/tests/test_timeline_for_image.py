@@ -13,7 +13,7 @@ from timeline_for_image_worker.cli import main
 from timeline_for_image_worker.discovery import discover_images
 from timeline_for_image_worker.fs_utils import write_json
 from timeline_for_image_worker.locks import LockTimeoutError, exclusive_lock
-from timeline_for_image_worker.settings import Settings, default_settings_payload, load_settings, settings_to_payload
+from timeline_for_image_worker.settings import RuntimeSettings, Settings, default_settings_payload, load_settings, settings_to_payload
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IMAGE_RECORD_SCHEMA = json.loads((REPO_ROOT / "schemas" / "image_record.schema.json").read_text(encoding="utf-8"))
@@ -97,6 +97,8 @@ def test_settings_reject_removed_keys(tmp_path: Path, monkeypatch, capsys) -> No
                 "schemaVersion": 1,
                 "inputRoots": [str(tmp_path)],
                 "outputRoot": str(tmp_path / "output"),
+                "computeMode": "gpu",
+                "runtime": {"instanceName": "local-test", "apiPort": 19400},
                 "removedSetting": "value",
             }
         ),
@@ -109,13 +111,40 @@ def test_settings_reject_removed_keys(tmp_path: Path, monkeypatch, capsys) -> No
     assert "unsupported keys: removedSetting" in capsys.readouterr().err
 
 
-def test_settings_contract_is_public_three_key_schema() -> None:
+def test_settings_contract_is_public_schema() -> None:
     payload = default_settings_payload()
-    assert set(payload) == {"schemaVersion", "inputRoots", "outputRoot"}
+    assert list(payload) == ["schemaVersion", "runtime", "inputRoots", "outputRoot", "computeMode"]
     SETTINGS_VALIDATOR.validate(payload)
-    SETTINGS_VALIDATOR.validate(
-        settings_to_payload(Settings(schema_version=1, input_roots=["C:\\Images"], output_root="C:\\TimelineData\\image"))
+    generated_payload = settings_to_payload(
+        Settings(
+            schema_version=1,
+            input_roots=["C:\\Images"],
+            output_root="C:\\TimelineData\\image",
+            compute_mode="gpu",
+            runtime=RuntimeSettings(instance_name="6105722c20", api_port=19400),
+        )
     )
+    assert list(generated_payload) == ["schemaVersion", "runtime", "inputRoots", "outputRoot", "computeMode"]
+    SETTINGS_VALIDATOR.validate(generated_payload)
+    secret_payload = settings_to_payload(
+        Settings(
+            schema_version=1,
+            input_roots=["C:\\Images"],
+            output_root="C:\\TimelineData\\image",
+            compute_mode="gpu",
+            runtime=RuntimeSettings(instance_name="6105722c20", api_port=19400),
+            huggingface_token="hf_test",
+        )
+    )
+    assert list(secret_payload) == [
+        "schemaVersion",
+        "runtime",
+        "inputRoots",
+        "outputRoot",
+        "huggingfaceToken",
+        "computeMode",
+    ]
+    SETTINGS_VALIDATOR.validate(secret_payload)
 
     removed_keys = [
         "ocr",
@@ -141,6 +170,8 @@ def test_settings_reject_invalid_path_values(tmp_path: Path, monkeypatch) -> Non
                 "schemaVersion": 1,
                 "inputRoots": [],
                 "outputRoot": str(tmp_path / "output"),
+                "computeMode": "gpu",
+                "runtime": {"instanceName": "local-test", "apiPort": 19400},
             },
             "inputRoots must contain at least one path.",
         ),
@@ -149,6 +180,8 @@ def test_settings_reject_invalid_path_values(tmp_path: Path, monkeypatch) -> Non
                 "schemaVersion": 1,
                 "inputRoots": [""],
                 "outputRoot": str(tmp_path / "output"),
+                "computeMode": "gpu",
+                "runtime": {"instanceName": "local-test", "apiPort": 19400},
             },
             "inputRoots[0] must not be empty.",
         ),
@@ -157,6 +190,8 @@ def test_settings_reject_invalid_path_values(tmp_path: Path, monkeypatch) -> Non
                 "schemaVersion": 1,
                 "inputRoots": [str(tmp_path)],
                 "outputRoot": "   ",
+                "computeMode": "gpu",
+                "runtime": {"instanceName": "local-test", "apiPort": 19400},
             },
             "outputRoot must not be empty.",
         ),
@@ -165,8 +200,30 @@ def test_settings_reject_invalid_path_values(tmp_path: Path, monkeypatch) -> Non
                 "schemaVersion": 1,
                 "inputRoots": [str(tmp_path)],
                 "outputRoot": None,
+                "computeMode": "gpu",
+                "runtime": {"instanceName": "local-test", "apiPort": 19400},
             },
             "outputRoot must be a string.",
+        ),
+        (
+            {
+                "schemaVersion": 1,
+                "inputRoots": [str(tmp_path)],
+                "outputRoot": str(tmp_path / "output"),
+                "computeMode": "invalid",
+                "runtime": {"instanceName": "local-test", "apiPort": 19400},
+            },
+            "computeMode must be one of: auto, cpu, gpu.",
+        ),
+        (
+            {
+                "schemaVersion": 1,
+                "inputRoots": [str(tmp_path)],
+                "outputRoot": str(tmp_path / "output"),
+                "computeMode": "gpu",
+                "runtime": {"instanceName": "local-test", "apiPort": 70000},
+            },
+            "runtime.apiPort must be a TCP port from 1 to 65535.",
         ),
     ]
 
@@ -469,6 +526,8 @@ def write_test_settings(
                 "schemaVersion": 1,
                 "inputRoots": [str(input_root)],
                 "outputRoot": str(output_root),
+                "computeMode": "gpu",
+                "runtime": {"instanceName": "local-test", "apiPort": 19400},
             }
         ),
         encoding="utf-8",

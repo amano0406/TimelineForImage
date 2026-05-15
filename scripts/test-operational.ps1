@@ -181,7 +181,7 @@ function Test-TfiComposeWorkerRunning {
 
     $result = Invoke-TfiProcess `
         -FilePath $Docker `
-        -Arguments @("compose", "--project-directory", $repoRoot, "ps", "--status", "running", "--services") `
+        -Arguments @("compose", "--project-directory", $repoRoot, "-p", $script:composeProject, "ps", "--status", "running", "--services") `
         -Environment $script:testEnvironment
     if ($result.ExitCode -ne 0) {
         return $false
@@ -196,7 +196,7 @@ function Stop-TfiCompose {
 
     [void](Invoke-TfiProcess `
         -FilePath $Docker `
-        -Arguments @("compose", "--project-directory", $repoRoot, "down") `
+        -Arguments @("compose", "--project-directory", $repoRoot, "-p", $script:composeProject, "down") `
         -Environment $script:testEnvironment)
 }
 
@@ -210,11 +210,16 @@ $settingsPath = Join-Path $workRootFull "settings.json"
 $repoSettingsPath = Join-Path $repoRoot "settings.json"
 $repoSettingsHadOriginal = Test-Path -LiteralPath $repoSettingsPath
 $repoSettingsOriginalBytes = if ($repoSettingsHadOriginal) { [System.IO.File]::ReadAllBytes($repoSettingsPath) } else { [byte[]]@() }
+$instanceName = "operational-test"
+$apiPort = 19492
+$composeProject = "timeline-for-image-$instanceName"
 
 $testEnvironment = @{
     "TIMELINE_FOR_IMAGE_SETTINGS_PATH" = (ConvertTo-TfiWorkspacePath -WindowsPath $settingsPath)
     "TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT" = (ConvertTo-TfiWorkspacePath -WindowsPath $stateRoot)
     "TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT" = "C:\"
+    "TIMELINE_FOR_IMAGE_INSTANCE_NAME" = $instanceName
+    "TIMELINE_FOR_IMAGE_API_PORT" = ([string]$apiPort)
 }
 $docker = Get-TfiDockerCommand
 $workerWasRunningBeforeTest = Test-TfiComposeWorkerRunning -Docker $docker
@@ -232,6 +237,7 @@ try {
     Invoke-TfiCli -Arguments @("settings", "save", "--input-root", $inputRoot, "--output-root", $outputRoot) | Out-Null
     Assert-Tfi (Test-Path -LiteralPath $settingsPath) "Test settings.json was not created."
     Assert-TfiRepoSettingsUnchanged
+    Assert-Tfi (-not (Test-Path -LiteralPath (Join-Path $outputRoot "items"))) "start/settings save should not process images automatically."
 
     $doctor = Invoke-TfiCliJson -Arguments @("doctor")
     Assert-Tfi ([bool]$doctor.ok) "doctor did not report ok."

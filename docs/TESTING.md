@@ -22,6 +22,16 @@ python -m unittest discover -s tests -p test_cli_ps1_download.py
 
 This test calls `cli.ps1` from the local host and confirms download ZIP generation.
 
+## Health Endpoint Build
+
+```powershell
+cd C:\apps\TimelineForImage
+dotnet build health\TimelineForImage.Health\TimelineForImage.Health.csproj
+```
+
+The health endpoint is the only C# HTTP surface. It serves `GET /health` and
+returns a JSON boolean.
+
 ## Operational Test
 
 ```powershell
@@ -42,5 +52,7 @@ Keep output for inspection:
 ```powershell
 python -m json.tool schemas\settings.schema.json > $null
 python -m json.tool schemas\image_record.schema.json > $null
+python -m json.tool settings.example.json > $null
+python -m json.tool timeline-product.json > $null
 git diff --check
 ```

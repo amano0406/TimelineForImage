@@ -13,117 +13,16 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = $utf8NoBom
 
 $repoRoot = $PSScriptRoot
-if (-not $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT) {
-    $env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT = "C:\"
-}
+. (Join-Path $repoRoot "scripts\tfi-runtime.ps1")
 
-$forwardedEnvironmentNames = @(
-    "TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT",
-    "TIMELINE_FOR_IMAGE_SETTINGS_PATH",
-    "TIMELINE_FOR_IMAGE_SETTINGS_EXAMPLE_PATH",
-    "TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT",
-    "TIMELINE_FOR_IMAGE_WORKER_INTERVAL_SECONDS"
-)
-
-function Format-TfiProcessArgument {
-    param([string]$Value)
-
-    if ($null -eq $Value) { return '""' }
-    $text = [string]$Value
-    if ($text.Length -eq 0) { return '""' }
-    if ($text -notmatch '[\s"]') { return $text }
-
-    $builder = [System.Text.StringBuilder]::new()
-    [void]$builder.Append('"')
-    $backslashes = 0
-    foreach ($character in $text.ToCharArray()) {
-        if ($character -eq '\') { $backslashes += 1; continue }
-        if ($character -eq '"') {
-            if ($backslashes -gt 0) { [void]$builder.Append(('\' * ($backslashes * 2))); $backslashes = 0 }
-            [void]$builder.Append('\"')
-            continue
-        }
-        if ($backslashes -gt 0) { [void]$builder.Append(('\' * $backslashes)); $backslashes = 0 }
-        [void]$builder.Append($character)
-    }
-    if ($backslashes -gt 0) { [void]$builder.Append(('\' * ($backslashes * 2))) }
-    [void]$builder.Append('"')
-    return $builder.ToString()
-}
-
-function Invoke-TfiHiddenProcess {
-    param(
-        [Parameter(Mandatory = $true)][string]$FilePath,
-        [string[]]$Arguments = @(),
-        [switch]$WriteOutput,
-        [switch]$SuppressOutput
-    )
-
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $FilePath
-    $startInfo.Arguments = (@($Arguments) | ForEach-Object { Format-TfiProcessArgument -Value ([string]$_) }) -join " "
-    $startInfo.WorkingDirectory = $repoRoot
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    $startInfo.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
-    $startInfo.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
-    $fileDirectory = Split-Path -Parent $FilePath
-    if ($fileDirectory) {
-        $currentPath = $startInfo.EnvironmentVariables["PATH"]
-        if (-not $currentPath) {
-            $currentPath = $env:PATH
-        }
-        $updatedPath = "$fileDirectory;$currentPath"
-        $startInfo.EnvironmentVariables["PATH"] = $updatedPath
-        $startInfo.EnvironmentVariables["Path"] = $updatedPath
-    }
-    $startInfo.EnvironmentVariables["PATHEXT"] = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL"
-    foreach ($name in $script:forwardedEnvironmentNames) {
-        $value = [System.Environment]::GetEnvironmentVariable($name, "Process")
-        if ($null -ne $value) {
-            $startInfo.EnvironmentVariables[$name] = $value
-        }
-    }
-
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
-    [void]$process.Start()
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
-    $stderrTask = $process.StandardError.ReadToEndAsync()
-    $process.WaitForExit()
-
-    $stdout = [string]$stdoutTask.Result
-    $stderr = [string]$stderrTask.Result
-    if ($WriteOutput -and -not $SuppressOutput) {
-        if ($stdout.Length -gt 0) { [Console]::Out.Write($stdout) }
-        if ($stderr.Length -gt 0) { [Console]::Error.Write($stderr) }
-    }
-
-    return [pscustomobject]@{
-        ExitCode = [int]$process.ExitCode
-        Stdout = $stdout
-        Stderr = $stderr
-    }
-}
-
-function Get-TfiForwardedEnvironmentArguments {
-    $arguments = @()
-    foreach ($name in $script:forwardedEnvironmentNames) {
-        $value = [System.Environment]::GetEnvironmentVariable($name, "Process")
-        if ($null -ne $value) {
-            $arguments += @("-e", "$name=$value")
-        }
-    }
-    return $arguments
-}
+$runtime = Initialize-TfiRuntimeEnvironment -RepoRoot $repoRoot
+$docker = Get-TfiDockerCommand
 
 function Test-TfiWorkerRunning {
     param([string]$Docker)
 
-    $result = Invoke-TfiHiddenProcess -FilePath $Docker -Arguments @("compose", "--project-directory", $repoRoot, "ps", "--status", "running", "--services") -SuppressOutput
+    $args = Get-TfiComposeArguments -RepoRoot $repoRoot -Runtime $runtime -Arguments @("ps", "--status", "running", "--services")
+    $result = Invoke-TfiHiddenProcess -FilePath $Docker -Arguments $args -SuppressOutput
     if ($result.ExitCode -ne 0) {
         return $false
     }
@@ -134,7 +33,8 @@ function Test-TfiWorkerRunning {
 function Start-TfiWorker {
     param([string]$Docker)
 
-    $result = Invoke-TfiHiddenProcess -FilePath $Docker -Arguments @("compose", "--project-directory", $repoRoot, "up", "-d", "--build") -SuppressOutput
+    $args = Get-TfiComposeArguments -RepoRoot $repoRoot -Runtime $runtime -Arguments @("up", "-d", "--build")
+    $result = Invoke-TfiHiddenProcess -FilePath $Docker -Arguments $args -SuppressOutput
     if ($result.ExitCode -eq 0) {
         return
     }
@@ -161,18 +61,6 @@ function Wait-TfiWorkerRunning {
     return $false
 }
 
-function Get-TfiDockerCommand {
-    $dockerExe = Join-Path $env:ProgramFiles "Docker\Docker\resources\bin\docker.exe"
-    if (Test-Path -LiteralPath $dockerExe) { return $dockerExe }
-    $docker = Get-Command docker.exe -ErrorAction SilentlyContinue
-    if ($docker) { return $docker.Source }
-    $docker = Get-Command docker -ErrorAction SilentlyContinue
-    if ($docker) { return $docker.Source }
-    throw "docker.exe was not found. Install or start Docker Desktop."
-}
-
-$docker = Get-TfiDockerCommand
-
 if (-not (Test-TfiWorkerRunning -Docker $docker)) {
     Start-TfiWorker -Docker $docker
 }
@@ -181,6 +69,9 @@ if (-not (Wait-TfiWorkerRunning -Docker $docker)) {
     throw "TimelineForImage worker did not reach the running state."
 }
 
-$execArgs = @("compose", "--project-directory", $repoRoot, "exec", "-T") + (Get-TfiForwardedEnvironmentArguments) + @("worker", "python", "-m", "timeline_for_image_worker") + @($CliArgs)
+$execArgs = Get-TfiComposeArguments `
+    -RepoRoot $repoRoot `
+    -Runtime $runtime `
+    -Arguments (@("exec", "-T") + (Get-TfiExecEnvironmentArguments) + @("worker", "python", "-m", "timeline_for_image_worker") + @($CliArgs))
 $execResult = Invoke-TfiHiddenProcess -FilePath $docker -Arguments $execArgs -WriteOutput
 exit $execResult.ExitCode

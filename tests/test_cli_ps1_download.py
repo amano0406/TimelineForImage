@@ -17,6 +17,8 @@ STATE_ROOT = TEST_ROOT / "state"
 SETTINGS_PATH = TEST_ROOT / "settings.json"
 RUNNER_PATH = TEST_ROOT / "invoke-cli.ps1"
 REPO_SETTINGS_PATH = REPO_ROOT / "settings.json"
+TEST_INSTANCE_NAME = "cli-ps1-test"
+TEST_API_PORT = "19493"
 
 
 class CliPs1DownloadTest(unittest.TestCase):
@@ -29,7 +31,7 @@ class CliPs1DownloadTest(unittest.TestCase):
             self.skipTest("Docker CLI is not available on this host.")
 
         original_settings = REPO_SETTINGS_PATH.read_bytes() if REPO_SETTINGS_PATH.exists() else None
-        worker_was_running = compose_worker_running(docker)
+        worker_was_running = compose_worker_running(docker, TEST_INSTANCE_NAME)
         worker_run_containers_before = worker_run_containers(docker)
         try:
             shutil.rmtree(TEST_ROOT, ignore_errors=True)
@@ -45,12 +47,13 @@ class CliPs1DownloadTest(unittest.TestCase):
                 "--output-root",
                 to_windows_path(RECORDS_ROOT),
             )
-            self.assertTrue(compose_worker_running(docker))
+            self.assertTrue(compose_worker_running(docker, TEST_INSTANCE_NAME))
             self.assertTrue(SETTINGS_PATH.exists())
             if original_settings is None:
                 self.assertFalse(REPO_SETTINGS_PATH.exists())
             else:
                 self.assertEqual(REPO_SETTINGS_PATH.read_bytes(), original_settings)
+            self.assertFalse((RECORDS_ROOT / "items").exists())
             run_cli_ps1(powershell, "--json", "items", "refresh", "--max-items", "1")
             image_records = sorted((RECORDS_ROOT / "items").glob("*/image_record.json"))
             self.assertEqual(len(image_records), 1)
@@ -70,7 +73,7 @@ class CliPs1DownloadTest(unittest.TestCase):
             self.assertEqual(worker_run_containers(docker), worker_run_containers_before)
         finally:
             if not worker_was_running:
-                run_docker_compose(docker, "down", check=False)
+                run_docker_compose(docker, TEST_INSTANCE_NAME, "down", check=False)
             shutil.rmtree(TEST_ROOT, ignore_errors=True)
             if original_settings is None:
                 REPO_SETTINGS_PATH.unlink(missing_ok=True)
@@ -116,6 +119,8 @@ def write_cli_runner() -> None:
                 "$env:TIMELINE_FOR_IMAGE_C_DRIVE_MOUNT = \"C:\\\"",
                 "$env:TIMELINE_FOR_IMAGE_SETTINGS_PATH = \"/workspace/output/cli-ps1-download-test/settings.json\"",
                 "$env:TIMELINE_FOR_IMAGE_INTERNAL_STATE_ROOT = \"/workspace/output/cli-ps1-download-test/state\"",
+                f"$env:TIMELINE_FOR_IMAGE_INSTANCE_NAME = \"{TEST_INSTANCE_NAME}\"",
+                f"$env:TIMELINE_FOR_IMAGE_API_PORT = \"{TEST_API_PORT}\"",
                 f"& '{cli_path}' @CliArgs",
                 "exit $LASTEXITCODE",
                 "",
@@ -154,12 +159,12 @@ def run_docker(docker: str, *args: str, check: bool = True) -> subprocess.Comple
     return completed
 
 
-def run_docker_compose(docker: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return run_docker(docker, "compose", "--project-directory", to_windows_path(REPO_ROOT), *args, check=check)
+def run_docker_compose(docker: str, project: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return run_docker(docker, "compose", "--project-directory", to_windows_path(REPO_ROOT), "-p", f"timeline-for-image-{project}", *args, check=check)
 
 
-def compose_worker_running(docker: str) -> bool:
-    completed = run_docker_compose(docker, "ps", "--status", "running", "--services", check=False)
+def compose_worker_running(docker: str, project: str) -> bool:
+    completed = run_docker_compose(docker, project, "ps", "--status", "running", "--services", check=False)
     if completed.returncode != 0:
         return False
     services = {line.strip() for line in completed.stdout.splitlines() if line.strip()}

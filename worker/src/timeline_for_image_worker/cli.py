@@ -31,6 +31,7 @@ from .settings import (
     resolved_output_root,
     resolve_local_path,
     save_settings,
+    settings_to_cli_payload,
     settings_path,
 )
 
@@ -180,7 +181,7 @@ def handle_settings(args: argparse.Namespace) -> int:
         settings = load_settings()
         payload = {
             "settings_path": str(settings_path()),
-            "settings": settings.__dict__,
+            "settings": settings_to_cli_payload(settings),
             "resolved": {
                 "input_roots": [str(path) for path in resolved_input_roots(settings)],
                 "output_root": str(resolved_output_root(settings)),
@@ -193,9 +194,12 @@ def handle_settings(args: argparse.Namespace) -> int:
             schema_version=current.schema_version,
             input_roots=args.input_root or current.input_roots,
             output_root=args.output_root or current.output_root,
+            compute_mode=current.compute_mode,
+            runtime=current.runtime,
+            huggingface_token=current.huggingface_token,
         )
         save_settings(updated)
-        return emit(args, {"settings": updated.__dict__}, "settings saved")
+        return emit(args, {"settings": settings_to_cli_payload(updated)}, "settings saved")
     raise ValueError("Unsupported settings command.")
 
 
@@ -551,6 +555,10 @@ def format_settings_status(payload: dict[str, Any]) -> str:
             f"settings_path: {payload['settings_path']}",
             f"input_roots: {', '.join(settings['input_roots'])}",
             f"output_root: {settings['output_root']}",
+            f"compute_mode: {settings['compute_mode']}",
+            f"huggingface_token: {settings.get('huggingface_token') or ''}",
+            f"runtime_instance: {settings['runtime']['instance_name']}",
+            f"runtime_api_port: {settings['runtime']['api_port']}",
             f"resolved_output_root: {resolved['output_root']}",
         ]
     )

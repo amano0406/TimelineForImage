@@ -7,4 +7,6 @@ release/
 __pycache__/
 .pytest_cache/
 *.pyc
+bin/
+obj/
 .env

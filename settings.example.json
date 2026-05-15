@@ -1,7 +1,12 @@
 {
   "schemaVersion": 1,
+  "runtime": {
+    "instanceName": "",
+    "apiPort": 19400
+  },
   "inputRoots": [
     "C:\\TimelineData\\input-image\\"
   ],
-  "outputRoot": "C:\\TimelineData\\image"
+  "outputRoot": "C:\\TimelineData\\image",
+  "computeMode": "gpu"
 }

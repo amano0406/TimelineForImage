@@ -9,6 +9,7 @@ TimelineForImage is a Docker-first local CLI product.
 - Windows PowerShell entry points: `start.ps1`, `stop.ps1`, `cli.ps1`
 - Docker Desktop or compatible Docker Compose runtime
 - Worker image built from `docker/worker.Dockerfile`
+- Minimal C# health endpoint at `http://127.0.0.1:<apiPort>/health`
 
 The normal command path is PowerShell to a resident Docker Compose worker to the Python CLI module:
 
@@ -17,6 +18,42 @@ cli.ps1 -> docker compose up -d --build when needed -> docker compose exec -T wo
 ```
 
 Product commands use the resident worker container. One-off worker containers are reserved for isolated test harnesses, not normal operation.
+
+Starting or restarting the Docker Compose service does not automatically process
+images. The default container command is `idle`, which keeps the local health
+endpoint alive. Processing starts only from explicit CLI commands such as
+`items refresh`, `items refresh --reprocess-duplicates`, or `serve --once`.
+
+## Settings And Runtime Identity
+
+`settings.json` stores image processing settings and the local runtime identity:
+
+```json
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "instanceName": "6105722c20",
+    "apiPort": 19400
+  },
+  "inputRoots": [
+    "C:\\TimelineData\\input-image\\"
+  ],
+  "outputRoot": "C:\\TimelineData\\image",
+  "computeMode": "gpu"
+}
+```
+
+`huggingfaceToken` is optional and is preserved when present. The launchers use
+`runtime.instanceName` for the Docker Compose project and `runtime.apiPort` for
+the host health endpoint port.
+
+The health endpoint is intentionally limited to one route:
+
+```text
+GET /health
+```
+
+It returns only `true` or `false`.
 
 ## Docker Resources
 
@@ -28,7 +65,7 @@ C:\ bind     Local Windows path access inside the container
 
 ## Pipeline
 
-The worker processes each image independently:
+When explicitly requested, the worker processes each image independently:
 
 1. Load `settings.json`.
 2. Resolve configured input and output paths.
